@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Required fields for export — each entry is "questionId:Display Label".
+        Rules:
+          • ALL listed fields must be non-empty before export is allowed.
+          • Entry [0] → shown as the survey title in the survey list.
+          • Entries [0] and [1] → used as parts 1 and 2 of the ZIP filename.
+          • Entry [2+] → required for export but not included in the filename.
+        To adapt to a new questionnaire: edit IDs and labels here only.
+        No code changes are needed.
+    -->
+    <string-array name="export_required_fields">
+        <item>9:Name of Scheme</item>
+        <item>3:Information Provider Name</item>
+    </string-array>
+</resources>

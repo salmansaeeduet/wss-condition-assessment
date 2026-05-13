@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- This allows FileProvider to access the app's internal files directory -->
+    <files-path name="my_internal_files" path="." />
+    <external-path name="documents" path="Documents" />
+
+    <!-- These are for files created directly by the app's camera/video intents -->
+    <external-path name="my_images" path="Android/data/com.example.cref_wss_01/files/Pictures" />
+    <external-path name="my_videos" path="Android/data/com.example.cref_wss_01/files/Movies" />
+    <external-path name="my_audio" path="Android/data/com.example.cref_wss_01/files/Music" />
+</paths>
