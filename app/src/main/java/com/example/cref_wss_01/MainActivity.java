@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity implements ExpandableNavAdap
         drawerLayout.addDrawerListener(toggle);
         toggle.syncState();
 
-        List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(this, getString(R.string.questionnaire_file));
+        List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(this, getString(R.string.questionnaire_file), getString(R.string.questionnaire_sheet));
 
         for (CategoryItem category : categoryItems) {
             for (SubCategoryItem subCategory : category.getSubCategories()) {
@@ -128,7 +128,7 @@ public class MainActivity extends AppCompatActivity implements ExpandableNavAdap
     private void refreshNavDrawer() {
         repository.getSurveyWithAnswersAndAttachments(surveyId, surveyWithData -> {
             if (surveyWithData != null) {
-                List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(this,  getString(R.string.questionnaire_file));
+                List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(this, getString(R.string.questionnaire_file), getString(R.string.questionnaire_sheet));
                 ExpandableNavAdapter navAdapter = new ExpandableNavAdapter(categoryItems, surveyWithData.answers, surveyWithData.attachments, this);
                 runOnUiThread(() -> navRecyclerView.setAdapter(navAdapter));
             }

@@ -12,7 +12,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            app:title="Climate Resilience Evaluation of WSS" />
+            app:title="Condition Assessment of WSS" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

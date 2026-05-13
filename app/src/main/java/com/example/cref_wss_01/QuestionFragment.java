@@ -60,6 +60,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.Looper;
+
 public class QuestionFragment extends Fragment {
 
     private static final String ARG_QUESTION = "question";
@@ -169,6 +180,14 @@ public class QuestionFragment extends Fragment {
                         }).start();
                     }
                 }
+            });
+
+    private Runnable pendingLocationAction;
+
+    private final ActivityResultLauncher<String> locationPermLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                if (granted && pendingLocationAction != null) pendingLocationAction.run();
+                pendingLocationAction = null;
             });
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -575,6 +594,9 @@ public class QuestionFragment extends Fragment {
             case "DURATION":
                 addDurationInput(questionId, container, currentAnswer, answerOptions);
                 break;
+            case "LOCATION":
+                addLocationInput(questionId, container, currentAnswer);
+                break;
         }
     }
 
@@ -960,9 +982,18 @@ public class QuestionFragment extends Fragment {
     private void addDurationInput(int questionId, LinearLayout container,
             Answer existingAnswer, String options) {
         if (getContext() == null) return;
+
+        // Parse format: "unit1|unit2;min;max"  (semicolons separate sections; all parts optional)
         String[] defaultUnits = {"seconds", "minutes", "hours", "days", "weeks", "months", "years"};
-        String[] units = (options != null && !options.isEmpty())
-                ? options.split("\\|") : defaultUnits;
+        String[] sections = (options != null && !options.isEmpty()) ? options.split(";", -1) : new String[0];
+        String unitsPart = sections.length > 0 ? sections[0].trim() : "";
+        String minPart   = sections.length > 1 ? sections[1].trim() : "";
+        String maxPart   = sections.length > 2 ? sections[2].trim() : "";
+
+        String[] units = unitsPart.isEmpty() ? defaultUnits : unitsPart.split("\\|");
+        final double[] bounds = {Double.NaN, Double.NaN};
+        try { if (!minPart.isEmpty()) bounds[0] = Double.parseDouble(minPart); } catch (NumberFormatException ignored) {}
+        try { if (!maxPart.isEmpty()) bounds[1] = Double.parseDouble(maxPart); } catch (NumberFormatException ignored) {}
 
         String initValue = "";
         String initUnit = units[0];
@@ -979,7 +1010,11 @@ public class QuestionFragment extends Fragment {
 
         EditText valueEdit = new EditText(getContext());
         valueEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        valueEdit.setHint("Amount");
+        String hint = (!Double.isNaN(bounds[0]) && !Double.isNaN(bounds[1]))
+                ? bounds[0] + " – " + bounds[1]
+                : (!Double.isNaN(bounds[0]) ? "≥ " + bounds[0]
+                : (!Double.isNaN(bounds[1]) ? "≤ " + bounds[1] : "Amount"));
+        valueEdit.setHint(hint);
         valueEdit.setText(initValue);
         LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -1005,7 +1040,7 @@ public class QuestionFragment extends Fragment {
                 if (!initialized) { initialized = true; return; }
                 selectedUnit[0] = units[pos];
                 String num = valueEdit.getText().toString().trim();
-                if (!num.isEmpty()) saveAnswer(questionId, num + "|" + selectedUnit[0]);
+                if (!num.isEmpty() && isInBounds(num, bounds)) saveAnswer(questionId, num + "|" + selectedUnit[0]);
             }
             @Override public void onNothingSelected(AdapterView<?> p) {}
         });
@@ -1015,13 +1050,240 @@ public class QuestionFragment extends Fragment {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override public void afterTextChanged(Editable s) {
                 String num = s.toString().trim();
-                if (!num.isEmpty()) saveAnswer(questionId, num + "|" + selectedUnit[0]);
+                if (num.isEmpty()) return;
+                if (isInBounds(num, bounds)) {
+                    valueEdit.setError(null);
+                    saveAnswer(questionId, num + "|" + selectedUnit[0]);
+                } else {
+                    String msg = !Double.isNaN(bounds[0]) && !Double.isNaN(bounds[1])
+                            ? "Must be between " + bounds[0] + " and " + bounds[1]
+                            : (!Double.isNaN(bounds[0]) ? "Must be ≥ " + bounds[0] : "Must be ≤ " + bounds[1]);
+                    valueEdit.setError(msg);
+                }
             }
         });
 
         row.addView(valueEdit);
         row.addView(unitSpinner);
         container.addView(row);
+    }
+
+    private void addLocationInput(int questionId, LinearLayout container, Answer existingAnswer) {
+        if (getContext() == null) return;
+
+        // Parse stored "lat|lng|village|tehsil|district|province"
+        String[] slots = {"", "", "", "", "", ""};
+        if (existingAnswer != null && existingAnswer.answerValue != null
+                && !existingAnswer.answerValue.isEmpty()) {
+            String[] saved = existingAnswer.answerValue.split("\\|", -1);
+            for (int i = 0; i < Math.min(saved.length, 6); i++) slots[i] = saved[i];
+        }
+
+        LinearLayout root = new LinearLayout(getContext());
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // ── Lat / Lng row ──────────────────────────────────────────────────────
+        LinearLayout coordRow = new LinearLayout(getContext());
+        coordRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams coordRowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        coordRowParams.bottomMargin = dpToPx(8);
+        coordRow.setLayoutParams(coordRowParams);
+
+        EditText latEdit = new EditText(getContext());
+        latEdit.setHint("Latitude");
+        latEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        latEdit.setText(slots[0]);
+        LinearLayout.LayoutParams coordFieldParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        coordFieldParams.setMarginEnd(dpToPx(4));
+        latEdit.setLayoutParams(coordFieldParams);
+
+        EditText lngEdit = new EditText(getContext());
+        lngEdit.setHint("Longitude");
+        lngEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        lngEdit.setText(slots[1]);
+        LinearLayout.LayoutParams lngParams = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lngParams.setMarginEnd(dpToPx(4));
+        lngEdit.setLayoutParams(lngParams);
+
+        Button gpsBtn = new Button(getContext());
+        gpsBtn.setText("Get GPS");
+        gpsBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        coordRow.addView(latEdit);
+        coordRow.addView(lngEdit);
+        coordRow.addView(gpsBtn);
+
+        // ── Address fields ─────────────────────────────────────────────────────
+        EditText provinceEdit = makeAddressField("Province", slots[5]);
+        EditText districtEdit = makeAddressField("District", slots[4]);
+        EditText tehsilEdit   = makeAddressField("Tehsil",   slots[3]);
+        EditText villageEdit  = makeAddressField("Village",  slots[2]);
+
+        root.addView(coordRow);
+        root.addView(provinceEdit);
+        root.addView(districtEdit);
+        root.addView(tehsilEdit);
+        root.addView(villageEdit);
+        container.addView(root);
+
+        // ── Save helper ────────────────────────────────────────────────────────
+        Runnable save = () -> saveAnswer(questionId,
+                latEdit.getText().toString().trim() + "|" +
+                lngEdit.getText().toString().trim() + "|" +
+                villageEdit.getText().toString().trim() + "|" +
+                tehsilEdit.getText().toString().trim() + "|" +
+                districtEdit.getText().toString().trim() + "|" +
+                provinceEdit.getText().toString().trim());
+
+        TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+            @Override public void afterTextChanged(Editable s) { save.run(); }
+        };
+        latEdit.addTextChangedListener(watcher);
+        lngEdit.addTextChangedListener(watcher);
+        provinceEdit.addTextChangedListener(watcher);
+        districtEdit.addTextChangedListener(watcher);
+        tehsilEdit.addTextChangedListener(watcher);
+        villageEdit.addTextChangedListener(watcher);
+
+        // ── GPS button ─────────────────────────────────────────────────────────
+        gpsBtn.setOnClickListener(v -> {
+            pendingLocationAction = () -> fetchGpsLocation(
+                    latEdit, lngEdit, villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
+            if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                pendingLocationAction.run();
+                pendingLocationAction = null;
+            } else {
+                locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION);
+            }
+        });
+    }
+
+    private EditText makeAddressField(String hint, String value) {
+        EditText et = new EditText(getContext());
+        et.setHint(hint);
+        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        et.setText(value);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.bottomMargin = dpToPx(4);
+        et.setLayoutParams(p);
+        return et;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void fetchGpsLocation(EditText latEdit, EditText lngEdit,
+            EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
+            EditText provinceEdit, int questionId) {
+        LocationManager lm = (LocationManager) requireContext()
+                .getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) return;
+
+        Location last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        if (last == null) last = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+        if (last != null) {
+            applyLocation(last, latEdit, lngEdit, villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
+            return;
+        }
+
+        Toast.makeText(getContext(), "Acquiring GPS fix…", Toast.LENGTH_SHORT).show();
+        String provider = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                ? LocationManager.GPS_PROVIDER : LocationManager.NETWORK_PROVIDER;
+        LocationListener[] ref = new LocationListener[1];
+        ref[0] = location -> {
+            lm.removeUpdates(ref[0]);
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(() ->
+                    applyLocation(location, latEdit, lngEdit, villageEdit, tehsilEdit,
+                            districtEdit, provinceEdit, questionId));
+            }
+        };
+        lm.requestLocationUpdates(provider, 0, 0, ref[0], Looper.getMainLooper());
+    }
+
+    private void applyLocation(Location loc, EditText latEdit, EditText lngEdit,
+            EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
+            EditText provinceEdit, int questionId) {
+        String lat = String.format(Locale.US, "%.6f", loc.getLatitude());
+        String lng = String.format(Locale.US, "%.6f", loc.getLongitude());
+        latEdit.setText(lat);
+        lngEdit.setText(lng);
+        // coords saved immediately by the TextWatcher on latEdit
+
+        if (Geocoder.isPresent() && isNetworkAvailable()) {
+            reverseGeocode(loc.getLatitude(), loc.getLongitude(),
+                    villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reverseGeocode(double lat, double lng,
+            EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
+            EditText provinceEdit, int questionId) {
+        Geocoder geocoder = new Geocoder(requireContext(), Locale.getDefault());
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            geocoder.getFromLocation(lat, lng, 1, addresses -> {
+                if (!addresses.isEmpty() && getActivity() != null) {
+                    Address a = addresses.get(0);
+                    getActivity().runOnUiThread(() -> fillAddressFields(
+                            a, villageEdit, tehsilEdit, districtEdit, provinceEdit));
+                }
+            });
+        } else {
+            new Thread(() -> {
+                try {
+                    List<Address> addresses = geocoder.getFromLocation(lat, lng, 1);
+                    if (addresses != null && !addresses.isEmpty() && getActivity() != null) {
+                        Address a = addresses.get(0);
+                        getActivity().runOnUiThread(() -> fillAddressFields(
+                                a, villageEdit, tehsilEdit, districtEdit, provinceEdit));
+                    }
+                } catch (IOException ignored) {}
+            }).start();
+        }
+    }
+
+    private void fillAddressFields(Address a, EditText villageEdit, EditText tehsilEdit,
+            EditText districtEdit, EditText provinceEdit) {
+        String sub = a.getSubLocality();
+        String loc = a.getLocality();
+        String subAdmin = a.getSubAdminArea();
+        String admin = a.getAdminArea();
+        if (sub != null && !sub.isEmpty())      villageEdit.setText(sub);
+        else if (loc != null && !loc.isEmpty()) villageEdit.setText(loc);
+        if (loc != null && !loc.isEmpty())         tehsilEdit.setText(loc);
+        if (subAdmin != null && !subAdmin.isEmpty()) districtEdit.setText(subAdmin);
+        if (admin != null && !admin.isEmpty())       provinceEdit.setText(admin);
+    }
+
+    @SuppressWarnings("deprecation")
+    private boolean isNetworkAvailable() {
+        ConnectivityManager cm = (ConnectivityManager)
+                requireContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        NetworkInfo info = cm.getActiveNetworkInfo();
+        return info != null && info.isConnected();
+    }
+
+    private static boolean isInBounds(String numStr, double[] bounds) {
+        try {
+            double v = Double.parseDouble(numStr);
+            if (!Double.isNaN(bounds[0]) && v < bounds[0]) return false;
+            if (!Double.isNaN(bounds[1]) && v > bounds[1]) return false;
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     // ── Sub-question card ──────────────────────────────────────────────────────

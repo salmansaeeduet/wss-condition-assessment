@@ -50,7 +50,7 @@ public class SurveyListActivity extends AppCompatActivity
 
         // Load all top-level questions from the configured CSV (for export and completion %)
         List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(
-                this, getString(R.string.questionnaire_file));
+                this, getString(R.string.questionnaire_file), getString(R.string.questionnaire_sheet));
         for (CategoryItem category : categoryItems) {
             for (SubCategoryItem subCategory : category.getSubCategories()) {
                 for (QuestionItem questionItem : subCategory.getQuestions()) {
