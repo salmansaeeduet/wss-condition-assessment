@@ -1,8 +1,10 @@
 <resources>
-    <string name="app_name">WSS Condition Assessment Balochistan</string>
+    <string name="app_name">WSS Condition Assessment</string>
     <string name="action_settings">Settings</string>
-    <string name="questionnaire_file">Pumping Based Performa_Final.xlsx</string>
-    <string name="questionnaire_sheet">Sheet1</string>
+
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
+
+    <string name="questionnaire_file">Survey_Questionnaire_26050601.xlsx</string>
+    <string name="questionnaire_sheet">Pumping Based 26051402</string>
 </resources>

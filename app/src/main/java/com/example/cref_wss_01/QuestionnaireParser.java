@@ -2,10 +2,9 @@ package com.example.cref_wss_01;
 
 import android.content.Context;
 import android.content.res.AssetManager;
-import org.dhatim.fastexcel.reader.ReadableWorkbook;
-import org.dhatim.fastexcel.reader.Row;
-import org.dhatim.fastexcel.reader.Sheet;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -13,7 +12,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
+import java.util.TreeMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 public class QuestionnaireParser {
 
@@ -70,29 +76,135 @@ public class QuestionnaireParser {
     private static void parseXlsx(AssetManager assetManager, String fileName, String sheetName,
             Map<String, CategoryItem> categories, Map<Integer, Question> questionById,
             Map<Integer, List<Question>> subsByParentId) throws IOException {
-        try (InputStream is = assetManager.open(fileName);
-             ReadableWorkbook wb = new ReadableWorkbook(is)) {
-            Sheet sheet = wb.findSheet(sheetName)
-                    .orElseThrow(() -> new IOException("Sheet '" + sheetName + "' not found in " + fileName));
-            List<Row> rows = new ArrayList<>();
-            try (Stream<Row> rowStream = sheet.openStream()) {
-                rowStream.forEach(rows::add);
-            }
-            for (int i = 1; i < rows.size(); i++) { // skip header row 0
-                Row row = rows.get(i);
-                String idStr = row.getCellText(0).trim();
-                if (idStr.isEmpty()) continue;
-                try {
-                    processRow(
-                        idStr,
-                        row.getCellText(1).trim(), row.getCellText(2).trim(),
-                        row.getCellText(3).trim(), row.getCellText(4).trim(),
-                        row.getCellText(5).trim(), row.getCellText(6).trim(),
-                        row.getCellText(7).trim(), row.getCellText(8).trim(),
-                        categories, questionById, subsByParentId);
-                } catch (NumberFormatException ignored) {}
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        try (ZipInputStream zis = new ZipInputStream(assetManager.open(fileName))) {
+            ZipEntry ze;
+            while ((ze = zis.getNextEntry()) != null) {
+                String name = ze.getName();
+                if (name.equals("xl/workbook.xml") ||
+                        name.equals("xl/_rels/workbook.xml.rels") ||
+                        name.equals("xl/sharedStrings.xml") ||
+                        name.startsWith("xl/worksheets/")) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = zis.read(buf)) != -1) baos.write(buf, 0, n);
+                    entries.put(name, baos.toByteArray());
+                }
+                zis.closeEntry();
             }
         }
+
+        String rId = xlsxSheetRId(entries.get("xl/workbook.xml"), sheetName);
+        if (rId == null) throw new IOException("Sheet '" + sheetName + "' not found in " + fileName);
+
+        String target = xlsxRelTarget(entries.get("xl/_rels/workbook.xml.rels"), rId);
+        if (target == null) throw new IOException("Relationship not found for rId: " + rId);
+
+        byte[] sheetData = entries.get("xl/" + target);
+        if (sheetData == null) throw new IOException("Sheet file not found: xl/" + target);
+
+        List<String> sst = new ArrayList<>();
+        byte[] sstData = entries.get("xl/sharedStrings.xml");
+        if (sstData != null) sst = xlsxSharedStrings(sstData);
+
+        xlsxRows(sheetData, sst, categories, questionById, subsByParentId);
+    }
+
+    private static Document xlsxParseDom(byte[] data) throws IOException {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(false);
+            DocumentBuilder db = dbf.newDocumentBuilder();
+            return db.parse(new ByteArrayInputStream(data));
+        } catch (Exception e) {
+            throw new IOException("XML parse error: " + e.getMessage(), e);
+        }
+    }
+
+    private static String xlsxSheetRId(byte[] workbookXml, String sheetName) throws IOException {
+        if (workbookXml == null) return null;
+        NodeList sheets = xlsxParseDom(workbookXml).getElementsByTagName("sheet");
+        for (int i = 0; i < sheets.getLength(); i++) {
+            Element el = (Element) sheets.item(i);
+            if (sheetName.equals(el.getAttribute("name"))) {
+                String rId = el.getAttribute("r:id");
+                if (rId.isEmpty()) rId = el.getAttribute("id");
+                return rId;
+            }
+        }
+        return null;
+    }
+
+    private static String xlsxRelTarget(byte[] relsXml, String rId) throws IOException {
+        if (relsXml == null) return null;
+        NodeList rels = xlsxParseDom(relsXml).getElementsByTagName("Relationship");
+        for (int i = 0; i < rels.getLength(); i++) {
+            Element el = (Element) rels.item(i);
+            if (rId.equals(el.getAttribute("Id"))) return el.getAttribute("Target");
+        }
+        return null;
+    }
+
+    private static List<String> xlsxSharedStrings(byte[] sstXml) throws IOException {
+        List<String> result = new ArrayList<>();
+        NodeList sis = xlsxParseDom(sstXml).getElementsByTagName("si");
+        for (int i = 0; i < sis.getLength(); i++) {
+            NodeList tNodes = ((Element) sis.item(i)).getElementsByTagName("t");
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j < tNodes.getLength(); j++) sb.append(tNodes.item(j).getTextContent());
+            result.add(sb.toString());
+        }
+        return result;
+    }
+
+    private static void xlsxRows(byte[] sheetXml, List<String> sst,
+            Map<String, CategoryItem> categories, Map<Integer, Question> questionById,
+            Map<Integer, List<Question>> subsByParentId) throws IOException {
+        NodeList rowNodes = xlsxParseDom(sheetXml).getElementsByTagName("row");
+        boolean firstRow = true;
+        for (int i = 0; i < rowNodes.getLength(); i++) {
+            if (firstRow) { firstRow = false; continue; }
+            Element rowEl = (Element) rowNodes.item(i);
+            NodeList cells = rowEl.getElementsByTagName("c");
+            Map<Integer, String> cols = new TreeMap<>();
+            for (int j = 0; j < cells.getLength(); j++) {
+                Element c = (Element) cells.item(j);
+                int col = xlsxColIndex(c.getAttribute("r"));
+                String type = c.getAttribute("t");
+                String val = "";
+                NodeList vNodes = c.getElementsByTagName("v");
+                if ("s".equals(type) && vNodes.getLength() > 0) {
+                    int idx = (int) Double.parseDouble(vNodes.item(0).getTextContent().trim());
+                    val = idx < sst.size() ? sst.get(idx) : "";
+                } else if ("inlineStr".equals(type)) {
+                    NodeList tNodes = c.getElementsByTagName("t");
+                    if (tNodes.getLength() > 0) val = tNodes.item(0).getTextContent();
+                } else if (vNodes.getLength() > 0) {
+                    val = vNodes.item(0).getTextContent().trim();
+                }
+                cols.put(col, val);
+            }
+            String idStr = cols.getOrDefault(0, "").trim();
+            if (idStr.isEmpty()) continue;
+            try {
+                processRow(idStr,
+                    cols.getOrDefault(1, "").trim(), cols.getOrDefault(2, "").trim(),
+                    cols.getOrDefault(3, "").trim(), cols.getOrDefault(4, "").trim(),
+                    cols.getOrDefault(5, "").trim(), cols.getOrDefault(6, "").trim(),
+                    cols.getOrDefault(7, "").trim(), cols.getOrDefault(8, "").trim(),
+                    categories, questionById, subsByParentId);
+            } catch (NumberFormatException ignored) {}
+        }
+    }
+
+    private static int xlsxColIndex(String cellRef) {
+        int col = 0;
+        for (char c : cellRef.toCharArray()) {
+            if (c < 'A' || c > 'Z') break;
+            col = col * 26 + (c - 'A' + 1);
+        }
+        return col - 1;
     }
 
     private static void processRow(String idStr, String categoryName, String subCatName,
