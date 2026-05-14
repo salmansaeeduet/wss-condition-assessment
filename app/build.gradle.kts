@@ -4,14 +4,14 @@ plugins {
 
 android {
     namespace = "com.example.cref_wss_01"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.cref_wss_01"
+        applicationId = "com.wss.cref.assessment.v1"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 36
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -32,11 +32,6 @@ android {
     buildFeatures {
         viewBinding = true
     }
-    packaging {
-        resources {
-            excludes += listOf("META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/NOTICE", "META-INF/INDEX.LIST")
-        }
-    }
 }
 
 dependencies {
@@ -44,15 +39,14 @@ dependencies {
     implementation("androidx.room:room-runtime:$room_version")
     annotationProcessor("androidx.room:room-compiler:$room_version")
 
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("androidx.cardview:cardview:1.0.0")
-    implementation("androidx.transition:transition:1.5.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.constraintlayout)
     implementation(libs.navigation.fragment)
     implementation(libs.navigation.ui)
-    implementation("org.dhatim:fastexcel-reader:0.18.4")
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)

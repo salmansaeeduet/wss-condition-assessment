@@ -65,11 +65,8 @@ import android.content.pm.PackageManager;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
-import android.os.Looper;
 
 public class QuestionFragment extends Fragment {
 
@@ -188,6 +185,20 @@ public class QuestionFragment extends Fragment {
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
                 if (granted && pendingLocationAction != null) pendingLocationAction.run();
                 pendingLocationAction = null;
+            });
+
+    private java.util.function.BiConsumer<Double, Double> pendingMapPickConsumer;
+
+    private final ActivityResultLauncher<android.content.Intent> mapPickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == android.app.Activity.RESULT_OK
+                        && result.getData() != null
+                        && pendingMapPickConsumer != null) {
+                    double lat = result.getData().getDoubleExtra("lat", Double.NaN);
+                    double lng = result.getData().getDoubleExtra("lng", Double.NaN);
+                    pendingMapPickConsumer.accept(lat, lng);
+                    pendingMapPickConsumer = null;
+                }
             });
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -595,7 +606,10 @@ public class QuestionFragment extends Fragment {
                 addDurationInput(questionId, container, currentAnswer, answerOptions);
                 break;
             case "LOCATION":
-                addLocationInput(questionId, container, currentAnswer);
+                addLocationInput(questionId, container, currentAnswer, answerOptions);
+                break;
+            case "COMPOUND":
+                addCompoundInput(questionId, container, currentAnswer, answerOptions);
                 break;
         }
     }
@@ -698,10 +712,18 @@ public class QuestionFragment extends Fragment {
         String[] tokens = (options != null && !options.isEmpty())
                 ? options.split("\\|", -1) : new String[]{"DECIMAL"};
         String format = tokens.length > 0 ? tokens[0].trim().toUpperCase(Locale.US) : "DECIMAL";
-        Double min = tokens.length > 1 && !tokens[1].trim().isEmpty()
-                ? parseDoubleOrNull(tokens[1].trim()) : null;
-        Double max = tokens.length > 2 && !tokens[2].trim().isEmpty()
-                ? parseDoubleOrNull(tokens[2].trim()) : null;
+
+        // Remaining tokens: parseable Doubles → min then max; non-numeric → units (";"-separated)
+        Double min = null, max = null;
+        String[] units = null;
+        for (int i = 1; i < tokens.length; i++) {
+            String t = tokens[i].trim();
+            if (t.isEmpty()) continue;
+            Double d = parseDoubleOrNull(t);
+            if (d != null && min == null) min = d;
+            else if (d != null) max = d;
+            else { units = t.split(";"); break; }
+        }
 
         int inputType;
         String hint = "";
@@ -716,52 +738,135 @@ public class QuestionFragment extends Fragment {
                 hint = "% (0–100)";
                 if (min == null) min = 0.0;
                 if (max == null) max = 100.0;
+                units = null;
                 break;
-            default: // DECIMAL
+            default:
                 inputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
                         | InputType.TYPE_NUMBER_FLAG_SIGNED;
                 if (min != null && max != null)
                     hint = "[" + min + " – " + max + "]";
                 break;
         }
-
         final Double finalMin = min;
         final Double finalMax = max;
+        final String[] finalUnits = units;
+
+        // Split stored value into numeric part and optional unit
+        String initNum = (existingAnswer != null && existingAnswer.answerValue != null)
+                ? existingAnswer.answerValue : "";
+        String initUnit = (units != null && units.length > 0) ? units[0] : "";
+        if (units != null && units.length > 1 && initNum.contains("|")) {
+            String[] p = initNum.split("\\|", 2);
+            initNum = p[0];
+            for (String u : units) if (u.equals(p[1])) { initUnit = u; break; }
+        }
 
         List<String> prevAnswers = allPreviousAnswers.stream().distinct().collect(Collectors.toList());
-        android.widget.AutoCompleteTextView editText =
-                new android.widget.AutoCompleteTextView(getContext());
-        editText.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        android.widget.AutoCompleteTextView editText = new android.widget.AutoCompleteTextView(getContext());
         editText.setInputType(inputType);
         editText.setTextSize(16);
         if (!hint.isEmpty()) editText.setHint(hint);
-        editText.setAdapter(new ArrayAdapter<>(getContext(),
-                android.R.layout.simple_dropdown_item_1line, prevAnswers));
-        editText.setOnFocusChangeListener((v, hasFocus) -> { if (hasFocus) editText.showDropDown(); });
-        if (existingAnswer != null && existingAnswer.answerValue != null) {
-            editText.setText(existingAnswer.answerValue);
-        }
+        editText.setAdapter(new ArrayAdapter<>(getContext(), android.R.layout.simple_dropdown_item_1line,
+                units == null ? prevAnswers : new ArrayList<>()));
+        if (units == null)
+            editText.setOnFocusChangeListener((v, f) -> { if (f) editText.showDropDown(); });
+        if (!initNum.isEmpty()) editText.setText(initNum);
 
-        editText.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                String val = s.toString().trim();
-                saveAnswer(questionId, val);
-                if (!val.isEmpty() && (finalMin != null || finalMax != null)) {
-                    try {
-                        double dv = Double.parseDouble(val);
-                        if (finalMin != null && dv < finalMin)
-                            editText.setError("Min: " + finalMin.intValue());
-                        else if (finalMax != null && dv > finalMax)
-                            editText.setError("Max: " + finalMax.intValue());
-                        else editText.setError(null);
-                    } catch (NumberFormatException ignored) {}
+        if (units == null) {
+            editText.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            editText.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                @Override public void afterTextChanged(Editable s) {
+                    String val = s.toString().trim();
+                    saveAnswer(questionId, val);
+                    validateBounds(editText, val, finalMin, finalMax);
                 }
-            }
-        });
-        container.addView(editText);
+            });
+            container.addView(editText);
+        } else if (units.length == 1) {
+            // Fixed unit label to the right of the EditText; store just the numeric value
+            LinearLayout row = new LinearLayout(getContext());
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            ep.setMarginEnd(dpToPx(4));
+            editText.setLayoutParams(ep);
+            TextView unitLbl = new TextView(getContext());
+            unitLbl.setText(units[0]);
+            unitLbl.setGravity(Gravity.CENTER_VERTICAL);
+            unitLbl.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.addView(editText);
+            row.addView(unitLbl);
+            editText.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                @Override public void afterTextChanged(Editable s) {
+                    String val = s.toString().trim();
+                    saveAnswer(questionId, val);
+                    validateBounds(editText, val, finalMin, finalMax);
+                }
+            });
+            container.addView(row);
+        } else {
+            // Unit Spinner to the right; store "value|selectedUnit"
+            final String[] selectedUnit = {initUnit};
+            List<String> unitList = Arrays.asList(units);
+            Spinner unitSpinner = new Spinner(getContext());
+            ArrayAdapter<String> ua = new ArrayAdapter<>(getContext(),
+                    android.R.layout.simple_spinner_item, unitList);
+            ua.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            unitSpinner.setAdapter(ua);
+            int initIdx = unitList.indexOf(initUnit);
+            if (initIdx >= 0) unitSpinner.setSelection(initIdx, false);
+            unitSpinner.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            unitSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                boolean initialized = false;
+                @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                    if (!initialized) { initialized = true; return; }
+                    selectedUnit[0] = finalUnits[pos];
+                    String num = editText.getText().toString().trim();
+                    if (!num.isEmpty()) {
+                        saveAnswer(questionId, num + "|" + selectedUnit[0]);
+                        validateBounds(editText, num, finalMin, finalMax);
+                    }
+                }
+                @Override public void onNothingSelected(AdapterView<?> p) {}
+            });
+            editText.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                @Override public void afterTextChanged(Editable s) {
+                    String val = s.toString().trim();
+                    if (!val.isEmpty()) {
+                        saveAnswer(questionId, val + "|" + selectedUnit[0]);
+                        validateBounds(editText, val, finalMin, finalMax);
+                    }
+                }
+            });
+            LinearLayout row = new LinearLayout(getContext());
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            ep.setMarginEnd(dpToPx(4));
+            editText.setLayoutParams(ep);
+            row.addView(editText);
+            row.addView(unitSpinner);
+            container.addView(row);
+        }
+    }
+
+    private void validateBounds(EditText et, String val, Double min, Double max) {
+        if (val.isEmpty() || (min == null && max == null)) { et.setError(null); return; }
+        try {
+            double dv = Double.parseDouble(val);
+            if (min != null && dv < min) et.setError("Min: " + min.intValue());
+            else if (max != null && dv > max) et.setError("Max: " + max.intValue());
+            else et.setError(null);
+        } catch (NumberFormatException ignored) {}
     }
 
     private void addEditText(int questionId, int inputType, LinearLayout container,
@@ -1068,15 +1173,46 @@ public class QuestionFragment extends Fragment {
         container.addView(row);
     }
 
-    private void addLocationInput(int questionId, LinearLayout container, Answer existingAnswer) {
+    private void launchMapPicker(EditText latEdit, EditText lngEdit,
+            EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
+            EditText provinceEdit, EditText localityEdit, int questionId) {
+        pendingMapPickConsumer = (lat, lng) -> {
+            Location loc = new Location("");
+            loc.setLatitude(lat);
+            loc.setLongitude(lng);
+            applyLocation(loc, latEdit, lngEdit, villageEdit, tehsilEdit,
+                    districtEdit, provinceEdit, localityEdit, questionId);
+        };
+        android.content.Intent intent = new android.content.Intent(requireContext(), MapPickerActivity.class);
+        String latStr = latEdit.getText().toString().trim();
+        String lngStr = lngEdit.getText().toString().trim();
+        if (!latStr.isEmpty() && !lngStr.isEmpty()) {
+            try {
+                intent.putExtra("initial_lat", Double.parseDouble(latStr));
+                intent.putExtra("initial_lng", Double.parseDouble(lngStr));
+            } catch (NumberFormatException ignored) {}
+        }
+        mapPickerLauncher.launch(intent);
+    }
+
+    private void addLocationInput(int questionId, LinearLayout container, Answer existingAnswer,
+            String options) {
         if (getContext() == null) return;
 
-        // Parse stored "lat|lng|village|tehsil|district|province"
-        String[] slots = {"", "", "", "", "", ""};
+        // Determine which fields to display; empty options → show all
+        java.util.LinkedHashSet<String> show = new java.util.LinkedHashSet<>();
+        if (options == null || options.trim().isEmpty()) {
+            show.addAll(Arrays.asList("COORDINATES", "PROVINCE", "DISTRICT", "TEHSIL", "VILLAGE", "LOCALITY"));
+        } else {
+            for (String f : options.split("\\|")) show.add(f.trim().toUpperCase(Locale.US));
+        }
+
+        // Slots: 0=lat, 1=lng, 2=village, 3=tehsil, 4=district, 5=province, 6=locality
+        String[] slots = {"", "", "", "", "", "", ""};
         if (existingAnswer != null && existingAnswer.answerValue != null
                 && !existingAnswer.answerValue.isEmpty()) {
             String[] saved = existingAnswer.answerValue.split("\\|", -1);
-            for (int i = 0; i < Math.min(saved.length, 6); i++) slots[i] = saved[i];
+            for (int i = 0; i < Math.min(saved.length, 7); i++) slots[i] = saved[i];
         }
 
         LinearLayout root = new LinearLayout(getContext());
@@ -1084,89 +1220,675 @@ public class QuestionFragment extends Fragment {
         root.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // ── Lat / Lng row ──────────────────────────────────────────────────────
-        LinearLayout coordRow = new LinearLayout(getContext());
-        coordRow.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams coordRowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        coordRowParams.bottomMargin = dpToPx(8);
-        coordRow.setLayoutParams(coordRowParams);
+        // ── COORDINATES row (lat + lng + GPS button) ───────────────────────────
+        final EditText latEdit;
+        final EditText lngEdit;
+        final Button gpsBtn;
+        if (show.contains("COORDINATES")) {
+            latEdit = new EditText(getContext());
+            latEdit.setHint("Latitude");
+            latEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | InputType.TYPE_NUMBER_FLAG_SIGNED);
+            latEdit.setText(slots[0]);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            cp.setMarginEnd(dpToPx(4));
+            latEdit.setLayoutParams(cp);
 
-        EditText latEdit = new EditText(getContext());
-        latEdit.setHint("Latitude");
-        latEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
-                | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        latEdit.setText(slots[0]);
-        LinearLayout.LayoutParams coordFieldParams = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        coordFieldParams.setMarginEnd(dpToPx(4));
-        latEdit.setLayoutParams(coordFieldParams);
+            lngEdit = new EditText(getContext());
+            lngEdit.setHint("Longitude");
+            lngEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | InputType.TYPE_NUMBER_FLAG_SIGNED);
+            lngEdit.setText(slots[1]);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lp.setMarginEnd(dpToPx(4));
+            lngEdit.setLayoutParams(lp);
 
-        EditText lngEdit = new EditText(getContext());
-        lngEdit.setHint("Longitude");
-        lngEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
-                | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        lngEdit.setText(slots[1]);
-        LinearLayout.LayoutParams lngParams = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lngParams.setMarginEnd(dpToPx(4));
-        lngEdit.setLayoutParams(lngParams);
+            gpsBtn = new Button(getContext());
+            gpsBtn.setText("Pick on Map");
+            gpsBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        Button gpsBtn = new Button(getContext());
-        gpsBtn.setText("Get GPS");
-        gpsBtn.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout coordRow = new LinearLayout(getContext());
+            coordRow.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams crp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            crp.bottomMargin = dpToPx(8);
+            coordRow.setLayoutParams(crp);
+            coordRow.addView(latEdit);
+            coordRow.addView(lngEdit);
+            coordRow.addView(gpsBtn);
+            root.addView(coordRow);
+        } else {
+            latEdit = null; lngEdit = null; gpsBtn = null;
+        }
 
-        coordRow.addView(latEdit);
-        coordRow.addView(lngEdit);
-        coordRow.addView(gpsBtn);
+        // ── Address fields (shown only if requested) ───────────────────────────
+        final EditText provinceEdit = show.contains("PROVINCE") ? makeAddressField("Province", slots[5]) : null;
+        final EditText districtEdit = show.contains("DISTRICT") ? makeAddressField("District", slots[4]) : null;
+        final EditText tehsilEdit   = show.contains("TEHSIL")   ? makeAddressField("Tehsil",   slots[3]) : null;
+        final EditText villageEdit  = show.contains("VILLAGE")  ? makeAddressField("Village",  slots[2]) : null;
+        final EditText localityEdit = show.contains("LOCALITY") ? makeAddressField("Locality", slots[6]) : null;
 
-        // ── Address fields ─────────────────────────────────────────────────────
-        EditText provinceEdit = makeAddressField("Province", slots[5]);
-        EditText districtEdit = makeAddressField("District", slots[4]);
-        EditText tehsilEdit   = makeAddressField("Tehsil",   slots[3]);
-        EditText villageEdit  = makeAddressField("Village",  slots[2]);
-
-        root.addView(coordRow);
-        root.addView(provinceEdit);
-        root.addView(districtEdit);
-        root.addView(tehsilEdit);
-        root.addView(villageEdit);
+        if (provinceEdit != null) root.addView(provinceEdit);
+        if (districtEdit != null) root.addView(districtEdit);
+        if (tehsilEdit   != null) root.addView(tehsilEdit);
+        if (villageEdit  != null) root.addView(villageEdit);
+        if (localityEdit != null) root.addView(localityEdit);
         container.addView(root);
 
-        // ── Save helper ────────────────────────────────────────────────────────
+        // ── Save: always 7 positional slots; preserve stored value for non-shown fields ──
+        final String s0 = slots[0], s1 = slots[1], s2 = slots[2], s3 = slots[3];
+        final String s4 = slots[4], s5 = slots[5], s6 = slots[6];
         Runnable save = () -> saveAnswer(questionId,
-                latEdit.getText().toString().trim() + "|" +
-                lngEdit.getText().toString().trim() + "|" +
-                villageEdit.getText().toString().trim() + "|" +
-                tehsilEdit.getText().toString().trim() + "|" +
-                districtEdit.getText().toString().trim() + "|" +
-                provinceEdit.getText().toString().trim());
+                (latEdit      != null ? latEdit.getText().toString().trim()      : s0) + "|" +
+                (lngEdit      != null ? lngEdit.getText().toString().trim()      : s1) + "|" +
+                (villageEdit  != null ? villageEdit.getText().toString().trim()  : s2) + "|" +
+                (tehsilEdit   != null ? tehsilEdit.getText().toString().trim()   : s3) + "|" +
+                (districtEdit != null ? districtEdit.getText().toString().trim() : s4) + "|" +
+                (provinceEdit != null ? provinceEdit.getText().toString().trim() : s5) + "|" +
+                (localityEdit != null ? localityEdit.getText().toString().trim() : s6));
 
         TextWatcher watcher = new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
             @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
             @Override public void afterTextChanged(Editable s) { save.run(); }
         };
-        latEdit.addTextChangedListener(watcher);
-        lngEdit.addTextChangedListener(watcher);
-        provinceEdit.addTextChangedListener(watcher);
-        districtEdit.addTextChangedListener(watcher);
-        tehsilEdit.addTextChangedListener(watcher);
-        villageEdit.addTextChangedListener(watcher);
+        if (latEdit      != null) latEdit.addTextChangedListener(watcher);
+        if (lngEdit      != null) lngEdit.addTextChangedListener(watcher);
+        if (provinceEdit != null) provinceEdit.addTextChangedListener(watcher);
+        if (districtEdit != null) districtEdit.addTextChangedListener(watcher);
+        if (tehsilEdit   != null) tehsilEdit.addTextChangedListener(watcher);
+        if (villageEdit  != null) villageEdit.addTextChangedListener(watcher);
+        if (localityEdit != null) localityEdit.addTextChangedListener(watcher);
 
-        // ── GPS button ─────────────────────────────────────────────────────────
-        gpsBtn.setOnClickListener(v -> {
-            pendingLocationAction = () -> fetchGpsLocation(
-                    latEdit, lngEdit, villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
-            if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
-                    == PackageManager.PERMISSION_GRANTED) {
-                pendingLocationAction.run();
-                pendingLocationAction = null;
-            } else {
-                locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION);
+        if (gpsBtn != null) {
+            gpsBtn.setOnClickListener(v ->
+                launchMapPicker(latEdit, lngEdit, villageEdit, tehsilEdit,
+                        districtEdit, provinceEdit, localityEdit, questionId));
+        }
+    }
+
+    private void addCompoundInput(int questionId, LinearLayout container,
+            Answer existingAnswer, String answerOptions) {
+        if (getContext() == null || answerOptions == null || answerOptions.isEmpty()) return;
+
+        String[] fieldDefs = answerOptions.split("\\|");
+        if (fieldDefs.length == 0) return;
+
+        // Build ordered map of label → value; pre-populate from stored "label=value||label=value"
+        LinkedHashMap<String, String> fieldValues = new LinkedHashMap<>();
+        for (String def : fieldDefs) {
+            String[] parts = def.split(":", 2);
+            if (parts.length > 0) fieldValues.put(parts[0].trim(), "");
+        }
+        if (existingAnswer != null && existingAnswer.answerValue != null
+                && !existingAnswer.answerValue.isEmpty()) {
+            for (String pair : existingAnswer.answerValue.split("\\|\\|")) {
+                int eqIdx = pair.indexOf('=');
+                if (eqIdx > 0) {
+                    String k = pair.substring(0, eqIdx);
+                    String v = pair.substring(eqIdx + 1);
+                    if (fieldValues.containsKey(k)) fieldValues.put(k, v);
+                }
             }
-        });
+        }
+
+        // Shared save: joins all entries as "label=value||label=value||..."
+        Runnable save = () -> {
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, String> e : fieldValues.entrySet()) {
+                if (sb.length() > 0) sb.append("||");
+                sb.append(e.getKey()).append("=").append(e.getValue());
+            }
+            saveAnswer(questionId, sb.toString());
+        };
+
+        // Card container for all sub-fields
+        LinearLayout card = new LinearLayout(getContext());
+        card.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.setMargins(0, dpToPx(4), 0, dpToPx(4));
+        card.setLayoutParams(cardParams);
+        card.setBackgroundResource(R.drawable.sub_question_bg);
+        card.setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
+
+        for (int i = 0; i < fieldDefs.length; i++) {
+            String[] tokens = fieldDefs[i].split(":");
+            if (tokens.length < 2) continue;
+            final String label = tokens[0].trim();
+            String type = tokens[1].trim().toUpperCase(Locale.US);
+            final String existingVal = fieldValues.getOrDefault(label, "");
+
+            if (i > 0) {
+                View divider = new View(getContext());
+                LinearLayout.LayoutParams dvp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 1);
+                dvp.setMargins(0, dpToPx(6), 0, dpToPx(6));
+                divider.setLayoutParams(dvp);
+                divider.setBackgroundColor(ContextCompat.getColor(getContext(), R.color.divider));
+                card.addView(divider);
+            }
+
+            TextView labelView = new TextView(getContext());
+            labelView.setText(label);
+            labelView.setTypeface(labelView.getTypeface(), Typeface.BOLD);
+            labelView.setTextSize(13);
+            LinearLayout.LayoutParams lvp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lvp.bottomMargin = dpToPx(2);
+            labelView.setLayoutParams(lvp);
+            card.addView(labelView);
+
+            switch (type) {
+                case "TEXT": {
+                    EditText et = new EditText(getContext());
+                    et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                    et.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    if (!existingVal.isEmpty()) et.setText(existingVal);
+                    et.addTextChangedListener(new TextWatcher() {
+                        @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                        @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                        @Override public void afterTextChanged(Editable s) {
+                            fieldValues.put(label, s.toString());
+                            save.run();
+                        }
+                    });
+                    card.addView(et);
+                    break;
+                }
+                case "NUMBER": {
+                    // token[2]: optional subtype keyword; remaining: min, max, units
+                    int ci = 2;
+                    String subtype = "DECIMAL";
+                    if (ci < tokens.length) {
+                        String t2 = tokens[ci].trim().toUpperCase(Locale.US);
+                        if (t2.equals("INTEGER") || t2.equals("DECIMAL") || t2.equals("PERCENTAGE")) {
+                            subtype = t2; ci++;
+                        }
+                    }
+                    Double min = null, max = null;
+                    String[] cUnits = null;
+                    for (int ti = ci; ti < tokens.length; ti++) {
+                        String t = tokens[ti].trim();
+                        if (t.isEmpty()) continue;
+                        Double d = parseDoubleOrNull(t);
+                        if (d != null && min == null) min = d;
+                        else if (d != null) max = d;
+                        else { cUnits = t.split(";"); break; }
+                    }
+                    int numInputType;
+                    String hint;
+                    switch (subtype) {
+                        case "INTEGER":
+                            numInputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED;
+                            hint = (min != null && max != null)
+                                    ? "[" + min.intValue() + " – " + max.intValue() + "]" : "";
+                            break;
+                        case "PERCENTAGE":
+                            numInputType = InputType.TYPE_CLASS_NUMBER;
+                            hint = "% (0–100)";
+                            if (min == null) min = 0.0;
+                            if (max == null) max = 100.0;
+                            cUnits = null;
+                            break;
+                        default:
+                            numInputType = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                                    | InputType.TYPE_NUMBER_FLAG_SIGNED;
+                            hint = (min != null && max != null) ? "[" + min + " – " + max + "]" : "";
+                            break;
+                    }
+                    final Double finalMin = min;
+                    final Double finalMax = max;
+                    final String[] finalCUnits = cUnits;
+                    // Recover numeric part and unit from stored "value" or "value|unit"
+                    String initNum = existingVal;
+                    String initUnit = (cUnits != null && cUnits.length > 0) ? cUnits[0] : "";
+                    if (cUnits != null && cUnits.length > 1 && existingVal.contains("|")) {
+                        String[] sp = existingVal.split("\\|", 2);
+                        initNum = sp[0];
+                        for (String u : cUnits) if (u.equals(sp[1])) { initUnit = u; break; }
+                    }
+                    EditText et = new EditText(getContext());
+                    et.setInputType(numInputType);
+                    if (!hint.isEmpty()) et.setHint(hint);
+                    if (!initNum.isEmpty()) et.setText(initNum);
+                    if (cUnits == null) {
+                        et.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        et.addTextChangedListener(new TextWatcher() {
+                            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                            @Override public void afterTextChanged(Editable s) {
+                                String val = s.toString().trim();
+                                fieldValues.put(label, val);
+                                save.run();
+                                validateBounds(et, val, finalMin, finalMax);
+                            }
+                        });
+                        card.addView(et);
+                    } else if (cUnits.length == 1) {
+                        LinearLayout numRow = new LinearLayout(getContext());
+                        numRow.setOrientation(LinearLayout.HORIZONTAL);
+                        LinearLayout.LayoutParams nep = new LinearLayout.LayoutParams(
+                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                        nep.setMarginEnd(dpToPx(4));
+                        et.setLayoutParams(nep);
+                        TextView uLbl = new TextView(getContext());
+                        uLbl.setText(cUnits[0]);
+                        uLbl.setGravity(Gravity.CENTER_VERTICAL);
+                        uLbl.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        numRow.addView(et);
+                        numRow.addView(uLbl);
+                        et.addTextChangedListener(new TextWatcher() {
+                            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                            @Override public void afterTextChanged(Editable s) {
+                                String val = s.toString().trim();
+                                fieldValues.put(label, val);
+                                save.run();
+                                validateBounds(et, val, finalMin, finalMax);
+                            }
+                        });
+                        card.addView(numRow);
+                    } else {
+                        final String[] selUnit = {initUnit};
+                        List<String> uList = Arrays.asList(cUnits);
+                        Spinner uSpinner = new Spinner(getContext());
+                        ArrayAdapter<String> uAdpt = new ArrayAdapter<>(getContext(),
+                                android.R.layout.simple_spinner_item, uList);
+                        uAdpt.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                        uSpinner.setAdapter(uAdpt);
+                        int uIdx = uList.indexOf(initUnit);
+                        if (uIdx >= 0) uSpinner.setSelection(uIdx, false);
+                        uSpinner.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        uSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                            boolean initialized = false;
+                            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                                if (!initialized) { initialized = true; return; }
+                                selUnit[0] = finalCUnits[pos];
+                                String num = et.getText().toString().trim();
+                                if (!num.isEmpty()) {
+                                    fieldValues.put(label, num + "|" + selUnit[0]);
+                                    save.run();
+                                    validateBounds(et, num, finalMin, finalMax);
+                                }
+                            }
+                            @Override public void onNothingSelected(AdapterView<?> p) {}
+                        });
+                        et.addTextChangedListener(new TextWatcher() {
+                            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                            @Override public void afterTextChanged(Editable s) {
+                                String val = s.toString().trim();
+                                if (!val.isEmpty()) {
+                                    fieldValues.put(label, val + "|" + selUnit[0]);
+                                    save.run();
+                                    validateBounds(et, val, finalMin, finalMax);
+                                }
+                            }
+                        });
+                        LinearLayout numRow = new LinearLayout(getContext());
+                        numRow.setOrientation(LinearLayout.HORIZONTAL);
+                        LinearLayout.LayoutParams nep = new LinearLayout.LayoutParams(
+                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                        nep.setMarginEnd(dpToPx(4));
+                        et.setLayoutParams(nep);
+                        numRow.addView(et);
+                        numRow.addView(uSpinner);
+                        card.addView(numRow);
+                    }
+                    break;
+                }
+                case "MULTIPLE_CHOICE_SINGLE": {
+                    if (tokens.length < 3) break;
+                    List<String> opts = new ArrayList<>();
+                    for (int j = 2; j < tokens.length; j++) opts.add(tokens[j].trim());
+                    List<String> spinnerItems = new ArrayList<>();
+                    spinnerItems.add("— select —");
+                    spinnerItems.addAll(opts);
+                    Spinner spinner = new Spinner(getContext());
+                    ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(),
+                            android.R.layout.simple_spinner_item, spinnerItems);
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    spinner.setAdapter(adapter);
+                    spinner.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    if (!existingVal.isEmpty()) {
+                        int selIdx = spinnerItems.indexOf(existingVal);
+                        if (selIdx >= 0) spinner.setSelection(selIdx, false);
+                    }
+                    spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                        boolean initialized = false;
+                        @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                            if (!initialized) { initialized = true; return; }
+                            fieldValues.put(label, pos == 0 ? "" : opts.get(pos - 1));
+                            save.run();
+                        }
+                        @Override public void onNothingSelected(AdapterView<?> p) {}
+                    });
+                    card.addView(spinner);
+                    break;
+                }
+                case "MULTIPLE_CHOICE_MULTI": {
+                    if (tokens.length < 3) break;
+                    List<String> opts = new ArrayList<>();
+                    for (int j = 2; j < tokens.length; j++) opts.add(tokens[j].trim());
+                    // Pre-load checked set from "Opt1|Opt2" stored value
+                    List<String> checked = new ArrayList<>(
+                            existingVal.isEmpty()
+                                    ? Collections.emptyList()
+                                    : Arrays.asList(existingVal.split("\\|")));
+                    LinearLayout cbGroup = new LinearLayout(getContext());
+                    cbGroup.setOrientation(LinearLayout.VERTICAL);
+                    cbGroup.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    for (String opt : opts) {
+                        CheckBox cb = new CheckBox(getContext());
+                        cb.setText(opt);
+                        cb.setChecked(checked.contains(opt));
+                        cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                            if (isChecked) { if (!checked.contains(opt)) checked.add(opt); }
+                            else checked.remove(opt);
+                            fieldValues.put(label, String.join("|", checked));
+                            save.run();
+                        });
+                        cbGroup.addView(cb);
+                    }
+                    card.addView(cbGroup);
+                    break;
+                }
+                case "DATE_FULLDATE": {
+                    final String[] val = {existingVal};
+                    Button btn = new Button(getContext());
+                    btn.setText(val[0].isEmpty() ? "Select date" : val[0]);
+                    btn.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    btn.setOnClickListener(v -> {
+                        Calendar cal = Calendar.getInstance();
+                        if (!val[0].isEmpty()) {
+                            try {
+                                String[] p = val[0].split("-");
+                                cal.set(Integer.parseInt(p[0]), Integer.parseInt(p[1]) - 1,
+                                        Integer.parseInt(p[2]));
+                            } catch (Exception ignored) {}
+                        }
+                        new DatePickerDialog(requireContext(), (dp, y, m, d) -> {
+                            val[0] = String.format(Locale.US, "%04d-%02d-%02d", y, m + 1, d);
+                            btn.setText(val[0]);
+                            fieldValues.put(label, val[0]);
+                            save.run();
+                        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH),
+                                cal.get(Calendar.DAY_OF_MONTH)).show();
+                    });
+                    card.addView(btn);
+                    break;
+                }
+                case "TIME": {
+                    final String[] val = {existingVal};
+                    Button btn = new Button(getContext());
+                    btn.setText(val[0].isEmpty() ? "Select time" : val[0]);
+                    btn.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    btn.setOnClickListener(v -> {
+                        Calendar cal = Calendar.getInstance();
+                        if (!val[0].isEmpty()) {
+                            try {
+                                String[] p = val[0].split(":");
+                                cal.set(Calendar.HOUR_OF_DAY, Integer.parseInt(p[0]));
+                                cal.set(Calendar.MINUTE, Integer.parseInt(p[1]));
+                            } catch (Exception ignored) {}
+                        }
+                        new TimePickerDialog(requireContext(), (tp, h, mn) -> {
+                            val[0] = String.format(Locale.US, "%02d:%02d", h, mn);
+                            btn.setText(val[0]);
+                            fieldValues.put(label, val[0]);
+                            save.run();
+                        }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show();
+                    });
+                    card.addView(btn);
+                    break;
+                }
+                case "DATE_TIME": {
+                    final String[] val = {existingVal};
+                    Button btn = new Button(getContext());
+                    btn.setText(val[0].isEmpty() ? "Select date & time" : val[0]);
+                    btn.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    btn.setOnClickListener(v -> {
+                        Calendar cal = Calendar.getInstance();
+                        if (!val[0].isEmpty()) {
+                            try {
+                                String[] dt = val[0].split(" ");
+                                String[] dp2 = dt[0].split("-");
+                                String[] tp2 = dt.length > 1 ? dt[1].split(":") : new String[]{"0", "0"};
+                                cal.set(Integer.parseInt(dp2[0]), Integer.parseInt(dp2[1]) - 1,
+                                        Integer.parseInt(dp2[2]),
+                                        Integer.parseInt(tp2[0]), Integer.parseInt(tp2[1]));
+                            } catch (Exception ignored) {}
+                        }
+                        new DatePickerDialog(requireContext(), (dp2, y, m, d) ->
+                            new TimePickerDialog(requireContext(), (tp2, h, mn) -> {
+                                val[0] = String.format(Locale.US,
+                                        "%04d-%02d-%02d %02d:%02d", y, m + 1, d, h, mn);
+                                btn.setText(val[0]);
+                                fieldValues.put(label, val[0]);
+                                save.run();
+                            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show(),
+                            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH),
+                            cal.get(Calendar.DAY_OF_MONTH)).show();
+                    });
+                    card.addView(btn);
+                    break;
+                }
+                case "DATE_YEAR": {
+                    int minYr = tokens.length > 2 ? parseIntOrDefault(tokens[2].trim(), 1950) : 1950;
+                    int maxYr = tokens.length > 3
+                            ? parseIntOrDefault(tokens[3].trim(),
+                                    Calendar.getInstance().get(Calendar.YEAR) + 5)
+                            : Calendar.getInstance().get(Calendar.YEAR) + 5;
+                    List<String> years = new ArrayList<>();
+                    for (int y = maxYr; y >= minYr; y--) years.add(String.valueOf(y));
+                    Spinner spinner = new Spinner(getContext());
+                    ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(),
+                            android.R.layout.simple_spinner_item, years);
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    spinner.setAdapter(adapter);
+                    spinner.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    if (!existingVal.isEmpty()) {
+                        int pos = years.indexOf(existingVal);
+                        if (pos >= 0) spinner.setSelection(pos, false);
+                    }
+                    spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                        boolean initialized = false;
+                        @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                            if (!initialized) { initialized = true; return; }
+                            fieldValues.put(label, years.get(pos));
+                            save.run();
+                        }
+                        @Override public void onNothingSelected(AdapterView<?> p) {}
+                    });
+                    card.addView(spinner);
+                    break;
+                }
+                case "DATE_YEAR_MONTH": {
+                    int minYr = tokens.length > 2 ? parseIntOrDefault(tokens[2].trim(), 1950) : 1950;
+                    int maxYr = tokens.length > 3
+                            ? parseIntOrDefault(tokens[3].trim(),
+                                    Calendar.getInstance().get(Calendar.YEAR) + 5)
+                            : Calendar.getInstance().get(Calendar.YEAR) + 5;
+                    List<String> years = new ArrayList<>();
+                    for (int y = maxYr; y >= minYr; y--) years.add(String.valueOf(y));
+                    String[] monthNames = {"January", "February", "March", "April", "May", "June",
+                            "July", "August", "September", "October", "November", "December"};
+                    String[] monthCodes = {"01","02","03","04","05","06","07","08","09","10","11","12"};
+                    String initYr = years.get(0);
+                    int initMoIdx = 0;
+                    if (!existingVal.isEmpty() && existingVal.contains("-")) {
+                        String[] yvParts = existingVal.split("-");
+                        if (years.contains(yvParts[0])) initYr = yvParts[0];
+                        if (yvParts.length > 1)
+                            for (int k = 0; k < monthCodes.length; k++)
+                                if (monthCodes[k].equals(yvParts[1])) { initMoIdx = k; break; }
+                    }
+                    final String[] selYr = {initYr};
+                    final int[] selMo = {initMoIdx};
+                    LinearLayout ymRow = new LinearLayout(getContext());
+                    ymRow.setOrientation(LinearLayout.HORIZONTAL);
+                    Spinner yearSpinner = new Spinner(getContext());
+                    ArrayAdapter<String> ya = new ArrayAdapter<>(getContext(),
+                            android.R.layout.simple_spinner_item, years);
+                    ya.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    yearSpinner.setAdapter(ya);
+                    yearSpinner.setSelection(Math.max(0, years.indexOf(initYr)), false);
+                    Spinner monthSpinner = new Spinner(getContext());
+                    ArrayAdapter<String> ma = new ArrayAdapter<>(getContext(),
+                            android.R.layout.simple_spinner_item, Arrays.asList(monthNames));
+                    ma.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    monthSpinner.setAdapter(ma);
+                    monthSpinner.setSelection(initMoIdx, false);
+                    LinearLayout.LayoutParams ysp = new LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                    ysp.setMarginEnd(dpToPx(4));
+                    yearSpinner.setLayoutParams(ysp);
+                    monthSpinner.setLayoutParams(new LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    yearSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                        boolean initialized = false;
+                        @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                            if (!initialized) { initialized = true; return; }
+                            selYr[0] = years.get(pos);
+                            fieldValues.put(label, selYr[0] + "-" + monthCodes[selMo[0]]);
+                            save.run();
+                        }
+                        @Override public void onNothingSelected(AdapterView<?> p) {}
+                    });
+                    monthSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                        boolean initialized = false;
+                        @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                            if (!initialized) { initialized = true; return; }
+                            selMo[0] = pos;
+                            fieldValues.put(label, selYr[0] + "-" + monthCodes[pos]);
+                            save.run();
+                        }
+                        @Override public void onNothingSelected(AdapterView<?> p) {}
+                    });
+                    ymRow.addView(yearSpinner);
+                    ymRow.addView(monthSpinner);
+                    card.addView(ymRow);
+                    break;
+                }
+                case "LOCATION": {
+                    // tokens[2..n] are optional field names (COORDINATES, PROVINCE, …)
+                    // Internal format: "lat|lng|village|tehsil|district|province|locality" (7 slots)
+                    // Safe inside fieldValues because compound separator is "||" (double-pipe).
+                    java.util.LinkedHashSet<String> locShow = new java.util.LinkedHashSet<>();
+                    if (tokens.length > 2) {
+                        for (int li = 2; li < tokens.length; li++)
+                            locShow.add(tokens[li].trim().toUpperCase(Locale.US));
+                    } else {
+                        locShow.addAll(Arrays.asList("COORDINATES","PROVINCE","DISTRICT","TEHSIL","VILLAGE","LOCALITY"));
+                    }
+                    String[] lSlots = {"", "", "", "", "", "", ""};
+                    if (!existingVal.isEmpty()) {
+                        String[] saved = existingVal.split("\\|", -1);
+                        for (int k = 0; k < Math.min(saved.length, 7); k++) lSlots[k] = saved[k];
+                    }
+                    LinearLayout locRoot = new LinearLayout(getContext());
+                    locRoot.setOrientation(LinearLayout.VERTICAL);
+                    locRoot.setLayoutParams(new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    final EditText latEdit;
+                    final EditText lngEdit;
+                    final Button locGpsBtn;
+                    if (locShow.contains("COORDINATES")) {
+                        latEdit = new EditText(getContext());
+                        latEdit.setHint("Latitude");
+                        latEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                                | InputType.TYPE_NUMBER_FLAG_SIGNED);
+                        latEdit.setText(lSlots[0]);
+                        LinearLayout.LayoutParams cp1 = new LinearLayout.LayoutParams(
+                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                        cp1.setMarginEnd(dpToPx(4));
+                        latEdit.setLayoutParams(cp1);
+                        lngEdit = new EditText(getContext());
+                        lngEdit.setHint("Longitude");
+                        lngEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL
+                                | InputType.TYPE_NUMBER_FLAG_SIGNED);
+                        lngEdit.setText(lSlots[1]);
+                        LinearLayout.LayoutParams cp2 = new LinearLayout.LayoutParams(
+                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                        cp2.setMarginEnd(dpToPx(4));
+                        lngEdit.setLayoutParams(cp2);
+                        locGpsBtn = new Button(getContext());
+                        locGpsBtn.setText("Pick on Map");
+                        locGpsBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                        LinearLayout coordRow = new LinearLayout(getContext());
+                        coordRow.setOrientation(LinearLayout.HORIZONTAL);
+                        LinearLayout.LayoutParams crp = new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                        crp.bottomMargin = dpToPx(4);
+                        coordRow.setLayoutParams(crp);
+                        coordRow.addView(latEdit);
+                        coordRow.addView(lngEdit);
+                        coordRow.addView(locGpsBtn);
+                        locRoot.addView(coordRow);
+                    } else {
+                        latEdit = null; lngEdit = null; locGpsBtn = null;
+                    }
+                    final EditText locProvinceEdit = locShow.contains("PROVINCE") ? makeAddressField("Province", lSlots[5]) : null;
+                    final EditText locDistrictEdit = locShow.contains("DISTRICT") ? makeAddressField("District", lSlots[4]) : null;
+                    final EditText locTehsilEdit   = locShow.contains("TEHSIL")   ? makeAddressField("Tehsil",   lSlots[3]) : null;
+                    final EditText locVillageEdit  = locShow.contains("VILLAGE")  ? makeAddressField("Village",  lSlots[2]) : null;
+                    final EditText locLocalityEdit = locShow.contains("LOCALITY") ? makeAddressField("Locality", lSlots[6]) : null;
+                    if (locProvinceEdit != null) locRoot.addView(locProvinceEdit);
+                    if (locDistrictEdit != null) locRoot.addView(locDistrictEdit);
+                    if (locTehsilEdit   != null) locRoot.addView(locTehsilEdit);
+                    if (locVillageEdit  != null) locRoot.addView(locVillageEdit);
+                    if (locLocalityEdit != null) locRoot.addView(locLocalityEdit);
+                    card.addView(locRoot);
+                    final String ls0=lSlots[0],ls1=lSlots[1],ls2=lSlots[2],ls3=lSlots[3];
+                    final String ls4=lSlots[4],ls5=lSlots[5],ls6=lSlots[6];
+                    Runnable locSave = () -> {
+                        fieldValues.put(label,
+                                (latEdit        != null ? latEdit.getText().toString().trim()        : ls0) + "|" +
+                                (lngEdit        != null ? lngEdit.getText().toString().trim()        : ls1) + "|" +
+                                (locVillageEdit != null ? locVillageEdit.getText().toString().trim() : ls2) + "|" +
+                                (locTehsilEdit  != null ? locTehsilEdit.getText().toString().trim()  : ls3) + "|" +
+                                (locDistrictEdit!= null ? locDistrictEdit.getText().toString().trim(): ls4) + "|" +
+                                (locProvinceEdit!= null ? locProvinceEdit.getText().toString().trim(): ls5) + "|" +
+                                (locLocalityEdit!= null ? locLocalityEdit.getText().toString().trim(): ls6));
+                        save.run();
+                    };
+                    TextWatcher locW = new TextWatcher() {
+                        @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+                        @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
+                        @Override public void afterTextChanged(Editable s) { locSave.run(); }
+                    };
+                    if (latEdit        != null) latEdit.addTextChangedListener(locW);
+                    if (lngEdit        != null) lngEdit.addTextChangedListener(locW);
+                    if (locProvinceEdit!= null) locProvinceEdit.addTextChangedListener(locW);
+                    if (locDistrictEdit!= null) locDistrictEdit.addTextChangedListener(locW);
+                    if (locTehsilEdit  != null) locTehsilEdit.addTextChangedListener(locW);
+                    if (locVillageEdit != null) locVillageEdit.addTextChangedListener(locW);
+                    if (locLocalityEdit!= null) locLocalityEdit.addTextChangedListener(locW);
+                    if (locGpsBtn != null) {
+                        locGpsBtn.setOnClickListener(v ->
+                            launchMapPicker(latEdit, lngEdit, locVillageEdit, locTehsilEdit,
+                                    locDistrictEdit, locProvinceEdit, locLocalityEdit, questionId));
+                    }
+                    break;
+                }
+            }
+        }
+        container.addView(card);
     }
 
     private EditText makeAddressField(String hint, String value) {
@@ -1181,39 +1903,9 @@ public class QuestionFragment extends Fragment {
         return et;
     }
 
-    @SuppressLint("MissingPermission")
-    private void fetchGpsLocation(EditText latEdit, EditText lngEdit,
-            EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
-            EditText provinceEdit, int questionId) {
-        LocationManager lm = (LocationManager) requireContext()
-                .getSystemService(Context.LOCATION_SERVICE);
-        if (lm == null) return;
-
-        Location last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        if (last == null) last = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-        if (last != null) {
-            applyLocation(last, latEdit, lngEdit, villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
-            return;
-        }
-
-        Toast.makeText(getContext(), "Acquiring GPS fix…", Toast.LENGTH_SHORT).show();
-        String provider = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                ? LocationManager.GPS_PROVIDER : LocationManager.NETWORK_PROVIDER;
-        LocationListener[] ref = new LocationListener[1];
-        ref[0] = location -> {
-            lm.removeUpdates(ref[0]);
-            if (getActivity() != null) {
-                getActivity().runOnUiThread(() ->
-                    applyLocation(location, latEdit, lngEdit, villageEdit, tehsilEdit,
-                            districtEdit, provinceEdit, questionId));
-            }
-        };
-        lm.requestLocationUpdates(provider, 0, 0, ref[0], Looper.getMainLooper());
-    }
-
     private void applyLocation(Location loc, EditText latEdit, EditText lngEdit,
             EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
-            EditText provinceEdit, int questionId) {
+            EditText provinceEdit, EditText localityEdit, int questionId) {
         String lat = String.format(Locale.US, "%.6f", loc.getLatitude());
         String lng = String.format(Locale.US, "%.6f", loc.getLongitude());
         latEdit.setText(lat);
@@ -1222,21 +1914,21 @@ public class QuestionFragment extends Fragment {
 
         if (Geocoder.isPresent() && isNetworkAvailable()) {
             reverseGeocode(loc.getLatitude(), loc.getLongitude(),
-                    villageEdit, tehsilEdit, districtEdit, provinceEdit, questionId);
+                    villageEdit, tehsilEdit, districtEdit, provinceEdit, localityEdit, questionId);
         }
     }
 
     @SuppressWarnings("deprecation")
     private void reverseGeocode(double lat, double lng,
             EditText villageEdit, EditText tehsilEdit, EditText districtEdit,
-            EditText provinceEdit, int questionId) {
+            EditText provinceEdit, EditText localityEdit, int questionId) {
         Geocoder geocoder = new Geocoder(requireContext(), Locale.getDefault());
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             geocoder.getFromLocation(lat, lng, 1, addresses -> {
                 if (!addresses.isEmpty() && getActivity() != null) {
                     Address a = addresses.get(0);
                     getActivity().runOnUiThread(() -> fillAddressFields(
-                            a, villageEdit, tehsilEdit, districtEdit, provinceEdit));
+                            a, villageEdit, tehsilEdit, districtEdit, provinceEdit, localityEdit));
                 }
             });
         } else {
@@ -1246,7 +1938,7 @@ public class QuestionFragment extends Fragment {
                     if (addresses != null && !addresses.isEmpty() && getActivity() != null) {
                         Address a = addresses.get(0);
                         getActivity().runOnUiThread(() -> fillAddressFields(
-                                a, villageEdit, tehsilEdit, districtEdit, provinceEdit));
+                                a, villageEdit, tehsilEdit, districtEdit, provinceEdit, localityEdit));
                     }
                 } catch (IOException ignored) {}
             }).start();
@@ -1254,16 +1946,24 @@ public class QuestionFragment extends Fragment {
     }
 
     private void fillAddressFields(Address a, EditText villageEdit, EditText tehsilEdit,
-            EditText districtEdit, EditText provinceEdit) {
+            EditText districtEdit, EditText provinceEdit, EditText localityEdit) {
         String sub = a.getSubLocality();
         String loc = a.getLocality();
         String subAdmin = a.getSubAdminArea();
         String admin = a.getAdminArea();
-        if (sub != null && !sub.isEmpty())      villageEdit.setText(sub);
-        else if (loc != null && !loc.isEmpty()) villageEdit.setText(loc);
-        if (loc != null && !loc.isEmpty())         tehsilEdit.setText(loc);
-        if (subAdmin != null && !subAdmin.isEmpty()) districtEdit.setText(subAdmin);
-        if (admin != null && !admin.isEmpty())       provinceEdit.setText(admin);
+        if (villageEdit  != null) {
+            if (sub != null && !sub.isEmpty())      villageEdit.setText(sub);
+            else if (loc != null && !loc.isEmpty()) villageEdit.setText(loc);
+        }
+        if (tehsilEdit   != null && loc != null && !loc.isEmpty())         tehsilEdit.setText(loc);
+        if (districtEdit != null && subAdmin != null && !subAdmin.isEmpty()) districtEdit.setText(subAdmin);
+        if (provinceEdit != null && admin != null && !admin.isEmpty())       provinceEdit.setText(admin);
+        if (localityEdit != null) {
+            // Use sub-locality for locality field; fall back to feature name
+            String feat = a.getFeatureName();
+            if (sub != null && !sub.isEmpty())        localityEdit.setText(sub);
+            else if (feat != null && !feat.isEmpty()) localityEdit.setText(feat);
+        }
     }
 
     @SuppressWarnings("deprecation")
