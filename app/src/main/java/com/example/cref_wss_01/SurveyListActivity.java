@@ -69,6 +69,10 @@ public class SurveyListActivity extends AppCompatActivity
         repository.getAllSurveysWithAnswers(surveys -> runOnUiThread(() -> adapter.setSurveys(surveys)));
         recyclerView.setAdapter(adapter);
 
+        FloatingActionButton fabOfflineMaps = findViewById(R.id.fab_offline_maps);
+        fabOfflineMaps.setOnClickListener(v ->
+                startActivity(new Intent(SurveyListActivity.this, OfflineMapsActivity.class)));
+
         FloatingActionButton fab = findViewById(R.id.fab_new_survey);
         fab.setOnClickListener(view -> {
             Survey newSurvey = new Survey();

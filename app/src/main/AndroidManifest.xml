@@ -51,6 +51,16 @@
             android:exported="false"
             android:theme="@style/Theme.CREF_WSS_01" />
 
+        <activity
+            android:name=".OfflineMapsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CREF_WSS_01" />
+
+        <activity
+            android:name=".MapAreaDownloadActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CREF_WSS_01" />
+
     </application>
 
 </manifest>

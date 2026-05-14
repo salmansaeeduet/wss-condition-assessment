@@ -5,7 +5,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.drawable.Drawable;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -16,7 +15,6 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
@@ -24,10 +22,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.osmdroid.config.Configuration;
 import org.osmdroid.events.MapEventsReceiver;
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase;
-import org.osmdroid.tileprovider.tilesource.XYTileSource;
 import org.osmdroid.util.GeoPoint;
-import org.osmdroid.util.MapTileIndex;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.MapEventsOverlay;
 import org.osmdroid.views.overlay.Marker;
@@ -41,10 +36,10 @@ public class MapPickerActivity extends AppCompatActivity {
     private TextView tvLat, tvLng;
     private Button btnConfirm;
 
-    private static final double DEFAULT_LAT = 28.5;
-    private static final double DEFAULT_LNG = 67.5;
+    private static final double DEFAULT_LAT  = 28.5;
+    private static final double DEFAULT_LNG  = 67.5;
     private static final double DEFAULT_ZOOM = 7.0;
-    private static final double PICK_ZOOM = 14.0;
+    private static final double PICK_ZOOM    = 14.0;
 
     private final ActivityResultLauncher<String> locationPermLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -58,15 +53,14 @@ public class MapPickerActivity extends AppCompatActivity {
         Configuration.getInstance().setUserAgentValue(getPackageName());
         setContentView(R.layout.activity_map_picker);
 
-        mapView  = findViewById(R.id.mapView);
-        tvLat    = findViewById(R.id.tvLat);
-        tvLng    = findViewById(R.id.tvLng);
+        mapView    = findViewById(R.id.mapView);
+        tvLat      = findViewById(R.id.tvLat);
+        tvLng      = findViewById(R.id.tvLng);
         btnConfirm = findViewById(R.id.btnConfirm);
         FloatingActionButton fabMyLocation = findViewById(R.id.fabMyLocation);
 
         setupMap();
 
-        // Restore or initialise pin from intent extras
         Intent in = getIntent();
         if (in.hasExtra("initial_lat") && in.hasExtra("initial_lng")) {
             double lat = in.getDoubleExtra("initial_lat", DEFAULT_LAT);
@@ -80,7 +74,6 @@ public class MapPickerActivity extends AppCompatActivity {
             mapView.getController().setZoom(DEFAULT_ZOOM);
         }
 
-        // Tap on map → place/move pin
         MapEventsOverlay tapOverlay = new MapEventsOverlay(new MapEventsReceiver() {
             @Override
             public boolean singleTapConfirmedHelper(GeoPoint p) {
@@ -113,18 +106,7 @@ public class MapPickerActivity extends AppCompatActivity {
     }
 
     private void setupMap() {
-        // ESRI World Imagery: tile URL is z/y/x (row-major), not the default z/x/y
-        OnlineTileSourceBase esriSatellite = new OnlineTileSourceBase(
-                "ESRI World Imagery", 0, 19, 256, "", new String[]{}) {
-            @Override
-            public String getTileURLString(long pMapTileIndex) {
-                return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"
-                        + MapTileIndex.getZoom(pMapTileIndex) + "/"
-                        + MapTileIndex.getY(pMapTileIndex) + "/"
-                        + MapTileIndex.getX(pMapTileIndex);
-            }
-        };
-        mapView.setTileSource(esriSatellite);
+        mapView.setTileSource(EsriTileSourceFactory.create());
         mapView.setMultiTouchControls(true);
         mapView.getZoomController().setVisibility(
                 org.osmdroid.views.CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT);
@@ -139,10 +121,8 @@ public class MapPickerActivity extends AppCompatActivity {
         pin.setPosition(point);
         mapView.invalidate();
 
-        String lat = String.format(Locale.US, "%.6f", point.getLatitude());
-        String lng = String.format(Locale.US, "%.6f", point.getLongitude());
-        tvLat.setText("Lat: " + lat);
-        tvLng.setText("Lng: " + lng);
+        tvLat.setText("Lat: " + String.format(Locale.US, "%.6f", point.getLatitude()));
+        tvLng.setText("Lng: " + String.format(Locale.US, "%.6f", point.getLongitude()));
         btnConfirm.setEnabled(true);
     }
 
@@ -154,7 +134,9 @@ public class MapPickerActivity extends AppCompatActivity {
         Location last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
         if (last == null) last = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
         if (last != null) {
-            mapView.getController().animateTo(new GeoPoint(last), PICK_ZOOM, 500L);
+            GeoPoint pt = new GeoPoint(last);
+            mapView.getController().animateTo(pt, mapView.getZoomLevelDouble(), 500L);
+            placePin(pt);
             return;
         }
 
@@ -164,21 +146,18 @@ public class MapPickerActivity extends AppCompatActivity {
         LocationListener[] ref = new LocationListener[1];
         ref[0] = loc -> {
             lm.removeUpdates(ref[0]);
-            runOnUiThread(() ->
-                mapView.getController().animateTo(new GeoPoint(loc), PICK_ZOOM, 500L));
+            runOnUiThread(() -> {
+                GeoPoint pt = new GeoPoint(loc);
+                mapView.getController().animateTo(pt, mapView.getZoomLevelDouble(), 500L);
+                placePin(pt);
+            });
         };
         lm.requestLocationUpdates(provider, 0, 0, ref[0]);
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        mapView.onResume();
-    }
+    protected void onResume() { super.onResume(); mapView.onResume(); }
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        mapView.onPause();
-    }
+    protected void onPause()  { super.onPause();  mapView.onPause();  }
 }
