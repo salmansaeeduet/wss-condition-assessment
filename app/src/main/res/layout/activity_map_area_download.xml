@@ -1,120 +1,127 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:layout_height="match_parent">
 
-    <com.google.android.material.appbar.AppBarLayout
+    <!-- Map fills the entire screen, same as MapPickerActivity -->
+    <org.osmdroid.views.MapView
+        android:id="@+id/mapView"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="match_parent" />
 
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:navigationIcon="?attr/homeAsUpIndicator"
-            app:title="Download Map Area" />
+    <!-- Back arrow overlaid top-left -->
+    <ImageButton
+        android:id="@+id/btnBack"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="8dp"
+        android:background="@drawable/bg_circle_semi"
+        android:contentDescription="Back"
+        android:src="@drawable/ic_arrow_back"
+        android:padding="8dp" />
 
-    </com.google.android.material.appbar.AppBarLayout>
+    <!-- Title overlaid top-center -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="Download Map Area"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:shadowColor="#AA000000"
+        android:shadowRadius="4"
+        android:shadowDx="1"
+        android:shadowDy="1" />
 
-    <!-- CoordinatorLayout fills the remaining space below the toolbar -->
-    <androidx.coordinatorlayout.widget.CoordinatorLayout
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabMyLocation"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="160dp"
+        android:contentDescription="Use my location"
+        app:srcCompat="@android:drawable/ic_menu_mylocation" />
+
+    <androidx.cardview.widget.CardView
+        android:id="@+id/bottomBar"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        app:cardCornerRadius="0dp"
+        app:cardElevation="8dp">
 
-        <org.osmdroid.views.MapView
-            android:id="@+id/mapView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fabMyLocation"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="160dp"
-            android:contentDescription="Use my location"
-            app:srcCompat="@android:drawable/ic_menu_mylocation" />
-
-        <androidx.cardview.widget.CardView
-            android:id="@+id/bottomBar"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            app:cardCornerRadius="0dp"
-            app:cardElevation="8dp">
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/tvZoomInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Pan and zoom the map to the area you want to download."
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
-                    android:id="@+id/tvZoomInfo"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:text="Pan and zoom the map to the area you want to download."
-                    android:textSize="12sp" />
+                    android:layout_marginEnd="8dp"
+                    android:text="Extra zoom levels:"
+                    android:textSize="13sp" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
+                <SeekBar
+                    android:id="@+id/sliderZoomDepth"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
-                        android:text="Extra zoom levels:"
-                        android:textSize="13sp" />
-
-                    <SeekBar
-                        android:id="@+id/sliderZoomDepth"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:max="4"
-                        android:progress="3" />
-
-                    <TextView
-                        android:id="@+id/tvZoomDepthValue"
-                        android:layout_width="28dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:gravity="center"
-                        android:text="+3"
-                        android:textSize="13sp" />
-
-                </LinearLayout>
+                    android:layout_weight="1"
+                    android:max="4"
+                    android:progress="3" />
 
                 <TextView
-                    android:id="@+id/tvTileEstimate"
-                    android:layout_width="match_parent"
+                    android:id="@+id/tvZoomDepthValue"
+                    android:layout_width="28dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginStart="8dp"
                     android:gravity="center"
-                    android:text="Estimated tiles: —"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btnDownloadArea"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Download This Area" />
+                    android:text="+3"
+                    android:textSize="13sp" />
 
             </LinearLayout>
 
-        </androidx.cardview.widget.CardView>
+            <TextView
+                android:id="@+id/tvTileEstimate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:text="Estimated tiles: —"
+                android:textSize="12sp" />
 
-    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+            <Button
+                android:id="@+id/btnDownloadArea"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Download This Area" />
 
-</LinearLayout>
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -11,9 +11,9 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
-import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -22,7 +22,6 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -61,23 +60,20 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Configuration.getInstance().setUserAgentValue(getPackageName());
         setContentView(R.layout.activity_map_area_download);
-
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        if (getSupportActionBar() != null) getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         mapView          = findViewById(R.id.mapView);
         tvZoomInfo       = findViewById(R.id.tvZoomInfo);
         tvTileEstimate   = findViewById(R.id.tvTileEstimate);
         sliderZoomDepth  = findViewById(R.id.sliderZoomDepth);
         tvZoomDepthValue = findViewById(R.id.tvZoomDepthValue);
+        ImageButton btnBack = findViewById(R.id.btnBack);
+        btnBack.setOnClickListener(v -> finish());
+
         FloatingActionButton fabMyLocation = findViewById(R.id.fabMyLocation);
         Button btnDownload = findViewById(R.id.btnDownloadArea);
 
         setupMap();
-        cacheManager = new CacheManager(mapView);
 
         mapView.addMapListener(new MapListener() {
             @Override public boolean onScroll(ScrollEvent e) { updateEstimate(); return false; }
@@ -105,7 +101,15 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
 
         btnDownload.setOnClickListener(v -> showNameDialog());
 
-        updateEstimate();
+        // Defer first estimate until after the MapView has been laid out and has valid dimensions
+        mapView.post(this::updateEstimate);
+    }
+
+    private CacheManager getCacheManager() {
+        if (cacheManager == null) {
+            cacheManager = new CacheManager(mapView);
+        }
+        return cacheManager;
     }
 
     private void setupMap() {
@@ -122,7 +126,7 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
         int zMin = (int) mapView.getZoomLevelDouble();
         int zDepth = (int) sliderZoomDepth.getProgress();
         int zMax = Math.min(zMin + zDepth, MAX_DOWNLOAD_ZOOM);
-        int tileCount = cacheManager.possibleTilesInArea(bbox, zMin, zMax);
+        int tileCount = getCacheManager().possibleTilesInArea(bbox, zMin, zMax);
 
         tvZoomInfo.setText("Zoom levels: " + zMin + " – " + zMax);
         tvTileEstimate.setText("Estimated tiles: " + String.format(Locale.US, "%,d", tileCount)
@@ -188,7 +192,7 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
         dialog.setOnShowListener(d -> {
             Button btnStop = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
 
-            cacheManager.downloadAreaAsync(this, bbox, finalZMin, finalZMax,
+            getCacheManager().downloadAreaAsync(this, bbox, finalZMin, finalZMax,
                     new CacheManager.CacheManagerCallback() {
                 @Override
                 public void onTaskComplete() {
@@ -225,7 +229,7 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
             });
 
             btnStop.setOnClickListener(v -> {
-                cacheManager.cancelAllJobs();
+                getCacheManager().cancelAllJobs();
                 dialog.dismiss();
                 Toast.makeText(this, "Download cancelled.", Toast.LENGTH_SHORT).show();
             });
@@ -284,9 +288,4 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
     @Override
     protected void onPause() { super.onPause(); mapView.onPause(); }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == android.R.id.home) { finish(); return true; }
-        return super.onOptionsItemSelected(item);
-    }
 }

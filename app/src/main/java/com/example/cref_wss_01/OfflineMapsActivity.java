@@ -32,7 +32,6 @@ public class OfflineMapsActivity extends AppCompatActivity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Configuration.getInstance().setUserAgentValue(getPackageName());
         setContentView(R.layout.activity_offline_maps);
 
         Toolbar toolbar = findViewById(R.id.toolbar);

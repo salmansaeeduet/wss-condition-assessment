@@ -50,7 +50,6 @@ public class MapPickerActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Configuration.getInstance().setUserAgentValue(getPackageName());
         setContentView(R.layout.activity_map_picker);
 
         mapView    = findViewById(R.id.mapView);
