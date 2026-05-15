@@ -49,8 +49,9 @@ class MapSearchHelper {
                 conn.setConnectTimeout(8000);
                 conn.setReadTimeout(8000);
 
-                if (conn.getResponseCode() != 200) {
-                    MAIN.post(() -> callback.onError("HTTP " + conn.getResponseCode()));
+                int status = conn.getResponseCode();
+                if (status != 200) {
+                    MAIN.post(() -> callback.onError("HTTP " + status));
                     return;
                 }
 
