@@ -11,6 +11,9 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -22,7 +25,10 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import android.widget.SeekBar;
@@ -36,6 +42,7 @@ import org.osmdroid.util.BoundingBox;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Executors;
 
@@ -44,12 +51,14 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
     private static final double DEFAULT_LAT  = 28.5;
     private static final double DEFAULT_LNG  = 67.5;
     private static final double DEFAULT_ZOOM = 7.0;
+    private static final int    MIN_DOWNLOAD_ZOOM = 10;
     private static final int    MAX_DOWNLOAD_ZOOM = 17;
 
     private MapView mapView;
     private CacheManager cacheManager;
     private TextView tvZoomInfo, tvTileEstimate, tvZoomDepthValue;
     private SeekBar sliderZoomDepth;
+    private int searchVersion = 0;
 
     private final ActivityResultLauncher<String> locationPermLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -73,6 +82,31 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
         FloatingActionButton fabMyLocation = findViewById(R.id.fabMyLocation);
         Button btnDownload = findViewById(R.id.btnDownloadArea);
 
+        // Inset top panel below status bar; push bottom card and FAB above nav bar
+        final int fabOriginalBottom = (int)(160 * getResources().getDisplayMetrics().density);
+        LinearLayout topPanelInner  = findViewById(R.id.topPanelInner);
+        android.view.View bottomBar = findViewById(R.id.bottomBar);
+        final int panelPadding = dpToPx(10);
+        ViewCompat.setOnApplyWindowInsetsListener(topPanelInner, (v, insets) -> {
+            int top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
+            v.setPadding(panelPadding, top + panelPadding, panelPadding, panelPadding);
+            return insets;
+        });
+        ViewCompat.setOnApplyWindowInsetsListener(bottomBar, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) v.getLayoutParams();
+            lp.bottomMargin = navBar;
+            v.setLayoutParams(lp);
+            return insets;
+        });
+        ViewCompat.setOnApplyWindowInsetsListener(fabMyLocation, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) v.getLayoutParams();
+            lp.bottomMargin = fabOriginalBottom + navBar;
+            v.setLayoutParams(lp);
+            return insets;
+        });
+
         setupMap();
 
         mapView.addMapListener(new MapListener() {
@@ -80,10 +114,12 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
             @Override public boolean onZoom(ZoomEvent e)     { updateEstimate(); return false; }
         });
 
+        tvZoomDepthValue.setText(String.valueOf(MIN_DOWNLOAD_ZOOM + sliderZoomDepth.getProgress()));
+
         sliderZoomDepth.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                tvZoomDepthValue.setText("+" + progress);
+                tvZoomDepthValue.setText(String.valueOf(MIN_DOWNLOAD_ZOOM + progress));
                 updateEstimate();
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
@@ -103,6 +139,8 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
 
         // Defer first estimate until after the MapView has been laid out and has valid dimensions
         mapView.post(this::updateEstimate);
+
+        setupSearch();
     }
 
     private CacheManager getCacheManager() {
@@ -114,6 +152,7 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
 
     private void setupMap() {
         mapView.setTileSource(EsriTileSourceFactory.create());
+        EsriTileSourceFactory.addLabelOverlay(mapView, this);
         mapView.setMultiTouchControls(true);
         mapView.getZoomController().setVisibility(
                 org.osmdroid.views.CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT);
@@ -121,16 +160,95 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
         mapView.getController().setZoom(DEFAULT_ZOOM);
     }
 
+    private void setupSearch() {
+        EditText etSearch      = findViewById(R.id.etSearch);
+        ImageButton btnSearch  = findViewById(R.id.btnSearch);
+        LinearLayout llResults = findViewById(R.id.llResults);
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+
+        Runnable doSearch = () -> {
+            String q = etSearch.getText().toString().trim();
+            if (q.isEmpty()) return;
+            if (imm != null) imm.hideSoftInputFromWindow(etSearch.getWindowToken(), 0);
+            final int ver = ++searchVersion;
+            llResults.setVisibility(View.GONE);
+
+            MapSearchHelper.search(q, Executors.newSingleThreadExecutor(),
+                    new MapSearchHelper.Callback() {
+                @Override
+                public void onResults(List<MapSearchHelper.Result> results) {
+                    if (ver != searchVersion) return;
+                    llResults.removeAllViews();
+                    if (results.isEmpty()) {
+                        addResultRow(llResults, "No results found.", null);
+                    } else {
+                        for (MapSearchHelper.Result r : results)
+                            addResultRow(llResults, r.name, r);
+                    }
+                    llResults.setVisibility(View.VISIBLE);
+                }
+                @Override
+                public void onError(String msg) {
+                    if (ver != searchVersion) return;
+                    Toast.makeText(MapAreaDownloadActivity.this,
+                            "Search error: " + msg, Toast.LENGTH_SHORT).show();
+                }
+            });
+        };
+
+        btnSearch.setOnClickListener(v -> doSearch.run());
+        etSearch.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                doSearch.run();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private void addResultRow(LinearLayout container, String label, MapSearchHelper.Result result) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setMaxLines(2);
+        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        int ph = dpToPx(6), pv = dpToPx(8);
+        tv.setPadding(pv, ph, pv, ph);
+        if (result != null) {
+            android.util.TypedValue attr = new android.util.TypedValue();
+            getTheme().resolveAttribute(android.R.attr.selectableItemBackground, attr, true);
+            tv.setBackgroundResource(attr.resourceId);
+            tv.setOnClickListener(view -> {
+                searchVersion++;
+                container.setVisibility(View.GONE);
+                zoomToResult(result);
+            });
+        }
+        container.addView(tv);
+    }
+
+    private void zoomToResult(MapSearchHelper.Result r) {
+        if (r.bbox != null) {
+            mapView.post(() -> mapView.zoomToBoundingBox(r.bbox, true, 80));
+        } else {
+            mapView.getController().animateTo(r.center, 14.0, 800L);
+        }
+    }
+
     private void updateEstimate() {
         BoundingBox bbox = mapView.getBoundingBox();
-        int zMin = (int) mapView.getZoomLevelDouble();
-        int zDepth = (int) sliderZoomDepth.getProgress();
-        int zMax = Math.min(zMin + zDepth, MAX_DOWNLOAD_ZOOM);
-        int tileCount = getCacheManager().possibleTilesInArea(bbox, zMin, zMax);
+        int zMax = MIN_DOWNLOAD_ZOOM + sliderZoomDepth.getProgress();
+        int tileCount = getCacheManager().possibleTilesInArea(bbox, MIN_DOWNLOAD_ZOOM, zMax);
+        String sizeStr = formatSize((long) tileCount * 25);
 
-        tvZoomInfo.setText("Zoom levels: " + zMin + " – " + zMax);
-        tvTileEstimate.setText("Estimated tiles: " + String.format(Locale.US, "%,d", tileCount)
-                + (tileCount > 5000 ? "  ⚠ Large — use Wi-Fi" : ""));
+        tvZoomInfo.setText("Zoom levels: " + MIN_DOWNLOAD_ZOOM + " – " + zMax);
+        tvTileEstimate.setText("~" + String.format(Locale.US, "%,d", tileCount)
+                + " tiles  (~" + sizeStr + ")"
+                + (tileCount > 10000 ? "  ⚠ Use Wi-Fi" : ""));
+    }
+
+    private static String formatSize(long kb) {
+        if (kb < 1024) return kb + " KB";
+        return String.format(Locale.US, "%.1f MB", kb / 1024.0);
     }
 
     private void showNameDialog() {
@@ -154,9 +272,8 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
 
     private void startDownload(String name) {
         BoundingBox bbox    = mapView.getBoundingBox();
-        int zMin            = (int) mapView.getZoomLevelDouble();
-        int zMax            = Math.min(zMin + (int) sliderZoomDepth.getProgress(), MAX_DOWNLOAD_ZOOM);
-        int tileCount       = cacheManager.possibleTilesInArea(bbox, zMin, zMax);
+        int zMax            = MIN_DOWNLOAD_ZOOM + sliderZoomDepth.getProgress();
+        int tileCount       = getCacheManager().possibleTilesInArea(bbox, MIN_DOWNLOAD_ZOOM, zMax);
 
         ProgressBar progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(tileCount);
@@ -177,7 +294,7 @@ public class MapAreaDownloadActivity extends AppCompatActivity {
         content.addView(progressBar);
         content.addView(tvProgress);
 
-        final int    finalZMin      = zMin;
+        final int    finalZMin      = MIN_DOWNLOAD_ZOOM;
         final int    finalZMax      = zMax;
         final int    finalTileCount = tileCount;
         final String finalName      = name;

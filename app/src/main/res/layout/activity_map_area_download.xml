@@ -5,39 +5,99 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Map fills the entire screen, same as MapPickerActivity -->
     <org.osmdroid.views.MapView
         android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Back arrow overlaid top-left -->
-    <ImageButton
-        android:id="@+id/btnBack"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:background="@drawable/bg_circle_semi"
-        android:contentDescription="Back"
-        android:src="@drawable/ic_arrow_back"
-        android:padding="8dp" />
+    <!-- Top panel: back button + search bar -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/topPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        app:cardCornerRadius="0dp"
+        app:cardElevation="8dp">
 
-    <!-- Title overlaid top-center -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="48dp"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="8dp"
-        android:gravity="center"
-        android:text="Download Map Area"
-        android:textColor="#FFFFFF"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:shadowColor="#AA000000"
-        android:shadowRadius="4"
-        android:shadowDx="1"
-        android:shadowDy="1" />
+        <LinearLayout
+            android:id="@+id/topPanelInner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <!-- Title row: back button + title + spacer -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btnBack"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Back"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_arrow_back" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="Download Map Area"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <View
+                    android:layout_width="48dp"
+                    android:layout_height="48dp" />
+
+            </LinearLayout>
+
+            <!-- Search row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etSearch"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Search places…"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:textSize="13sp" />
+
+                <ImageButton
+                    android:id="@+id/btnSearch"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Search"
+                    android:padding="4dp"
+                    android:src="@android:drawable/ic_menu_search" />
+
+            </LinearLayout>
+
+            <!-- Search results (hidden until search is performed) -->
+            <LinearLayout
+                android:id="@+id/llResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabMyLocation"
@@ -68,7 +128,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Pan and zoom the map to the area you want to download."
+                android:text="Pan to the area to download. Always includes zoom 10–17 (district → building)."
                 android:textSize="12sp" />
 
             <LinearLayout
@@ -82,7 +142,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
-                    android:text="Extra zoom levels:"
+                    android:text="Max zoom:"
                     android:textSize="13sp" />
 
                 <SeekBar
@@ -90,8 +150,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:max="4"
-                    android:progress="3" />
+                    android:max="7"
+                    android:progress="7" />
 
                 <TextView
                     android:id="@+id/tvZoomDepthValue"
@@ -99,7 +159,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
                     android:gravity="center"
-                    android:text="+3"
+                    android:text="17"
                     android:textSize="13sp" />
 
             </LinearLayout>

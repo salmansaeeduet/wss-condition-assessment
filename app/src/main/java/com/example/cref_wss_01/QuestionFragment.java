@@ -189,6 +189,19 @@ public class QuestionFragment extends Fragment {
 
     private java.util.function.BiConsumer<Double, Double> pendingMapPickConsumer;
 
+    private java.util.function.Consumer<String> pendingGeometryConsumer;
+
+    private final ActivityResultLauncher<android.content.Intent> geometryPickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == android.app.Activity.RESULT_OK
+                        && result.getData() != null
+                        && pendingGeometryConsumer != null) {
+                    String value = result.getData().getStringExtra("geometry_value");
+                    if (value != null) pendingGeometryConsumer.accept(value);
+                    pendingGeometryConsumer = null;
+                }
+            });
+
     private final ActivityResultLauncher<android.content.Intent> mapPickerLauncher =
             registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == android.app.Activity.RESULT_OK
@@ -607,6 +620,9 @@ public class QuestionFragment extends Fragment {
                 break;
             case "LOCATION":
                 addLocationInput(questionId, container, currentAnswer, answerOptions);
+                break;
+            case "GEOMETRY":
+                addGeometryInput(questionId, container, currentAnswer);
                 break;
             case "COMPOUND":
                 addCompoundInput(questionId, container, currentAnswer, answerOptions);
@@ -1193,6 +1209,65 @@ public class QuestionFragment extends Fragment {
             } catch (NumberFormatException ignored) {}
         }
         mapPickerLauncher.launch(intent);
+    }
+
+    private void addGeometryInput(int questionId, LinearLayout container,
+            Answer existingAnswer) {
+        if (getContext() == null) return;
+
+        String existing = existingAnswer != null ? existingAnswer.answerValue : null;
+        List<GeometryUtils.GeometryItem> geoms0 = GeometryUtils.fromJson(existing);
+
+        TextView tvStatus = new TextView(getContext());
+        tvStatus.setText(GeometryUtils.summary(geoms0));
+        LinearLayout.LayoutParams stp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        stp.bottomMargin = dpToPx(4);
+        tvStatus.setLayoutParams(stp);
+
+        Button btnDraw = new Button(getContext());
+        btnDraw.setText(geoms0.isEmpty() ? "Open Map" : "Edit on Map");
+        btnDraw.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        btnDraw.setOnClickListener(v -> {
+            // Gather other geometry answers to display as background in the picker
+            repository.getAnswersForSurvey(surveyId, answers -> {
+                if (getActivity() == null || getContext() == null) return;
+                getActivity().runOnUiThread(() -> {
+                    org.json.JSONObject otherGeomsJson = new org.json.JSONObject();
+                    for (Answer a : answers) {
+                        if (a.questionId == questionId) continue;
+                        if (a.answerValue == null || a.answerValue.isEmpty()) continue;
+                        String av = a.answerValue.trim();
+                        if (!av.startsWith("[")) continue;
+                        try {
+                            new org.json.JSONArray(av); // validate
+                            otherGeomsJson.put(String.valueOf(a.questionId), av);
+                        } catch (org.json.JSONException ignored) {}
+                    }
+
+                    pendingGeometryConsumer = newValue -> {
+                        saveAnswer(questionId, newValue);
+                        List<GeometryUtils.GeometryItem> updated = GeometryUtils.fromJson(newValue);
+                        tvStatus.setText(GeometryUtils.summary(updated));
+                        btnDraw.setText("Edit on Map");
+                    };
+
+                    android.content.Intent intent = new android.content.Intent(
+                            getContext(), GeometryPickerActivity.class);
+                    intent.putExtra("question_label", question.getQuestionText());
+                    intent.putExtra("question_id", questionId);
+                    if (existing != null && !existing.isEmpty())
+                        intent.putExtra("existing_value", existing);
+                    intent.putExtra("other_geoms", otherGeomsJson.toString());
+                    geometryPickerLauncher.launch(intent);
+                });
+            });
+        });
+
+        container.addView(tvStatus);
+        container.addView(btnDraw);
     }
 
     private void addLocationInput(int questionId, LinearLayout container, Answer existingAnswer,

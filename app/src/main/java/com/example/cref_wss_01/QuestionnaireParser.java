@@ -232,6 +232,11 @@ public class QuestionnaireParser {
                 answerType    = "NUMBER";
                 answerOptions = "PERCENTAGE" + (answerOptions.isEmpty() ? "" : "|" + answerOptions);
                 break;
+            case "LINE":
+            case "POLYGON":
+                answerType    = "GEOMETRY";
+                answerOptions = "";
+                break;
         }
 
         Question question = new Question(id, categoryName, subCatName, questionText,

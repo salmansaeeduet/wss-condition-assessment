@@ -10,8 +10,11 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.content.FileProvider;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -74,6 +77,25 @@ public class SurveyListActivity extends AppCompatActivity
                 startActivity(new Intent(SurveyListActivity.this, OfflineMapsActivity.class)));
 
         FloatingActionButton fab = findViewById(R.id.fab_new_survey);
+
+        // Push FABs above the navigation bar
+        final int fabOfflineOriginal = (int)(80 * getResources().getDisplayMetrics().density);
+        final int fabNewOriginal     = (int)(16 * getResources().getDisplayMetrics().density);
+        ViewCompat.setOnApplyWindowInsetsListener(fabOfflineMaps, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) v.getLayoutParams();
+            lp.bottomMargin = fabOfflineOriginal + navBar;
+            v.setLayoutParams(lp);
+            return insets;
+        });
+        ViewCompat.setOnApplyWindowInsetsListener(fab, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) v.getLayoutParams();
+            lp.bottomMargin = fabNewOriginal + navBar;
+            v.setLayoutParams(lp);
+            return insets;
+        });
+
         fab.setOnClickListener(view -> {
             Survey newSurvey = new Survey();
             newSurvey.surveyDate = System.currentTimeMillis();

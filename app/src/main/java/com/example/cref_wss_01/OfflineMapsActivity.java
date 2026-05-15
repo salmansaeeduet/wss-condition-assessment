@@ -10,6 +10,9 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -50,6 +53,16 @@ public class OfflineMapsActivity extends AppCompatActivity
         FloatingActionButton fab = findViewById(R.id.fabAddArea);
         fab.setOnClickListener(v ->
                 startActivity(new Intent(this, MapAreaDownloadActivity.class)));
+
+        // Push FAB above the navigation bar
+        final int fabOriginal = (int)(16 * getResources().getDisplayMetrics().density);
+        ViewCompat.setOnApplyWindowInsetsListener(fab, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) v.getLayoutParams();
+            lp.bottomMargin = fabOriginal + navBar;
+            v.setLayoutParams(lp);
+            return insets;
+        });
 
         loadAreas();
         refreshCacheSize();
