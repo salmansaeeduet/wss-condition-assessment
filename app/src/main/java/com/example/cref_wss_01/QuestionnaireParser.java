@@ -67,6 +67,7 @@ public class QuestionnaireParser {
                         t.length > 6 ? strip(t[6]) : "",
                         t.length > 7 ? strip(t[7]) : "",
                         t.length > 8 ? strip(t[8]) : "",
+                        t.length > 9 ? strip(t[9]) : "",
                         categories, questionById, subsByParentId);
                 } catch (NumberFormatException ignored) {}
             }
@@ -193,6 +194,7 @@ public class QuestionnaireParser {
                     cols.getOrDefault(3, "").trim(), cols.getOrDefault(4, "").trim(),
                     cols.getOrDefault(5, "").trim(), cols.getOrDefault(6, "").trim(),
                     cols.getOrDefault(7, "").trim(), cols.getOrDefault(8, "").trim(),
+                    cols.getOrDefault(9, "").trim(),
                     categories, questionById, subsByParentId);
             } catch (NumberFormatException ignored) {}
         }
@@ -209,7 +211,7 @@ public class QuestionnaireParser {
 
     private static void processRow(String idStr, String categoryName, String subCatName,
             String questionText, String answerType, String answerOptions, String explanation,
-            String parentIdStr, String triggerValue,
+            String parentIdStr, String triggerValue, String tag,
             Map<String, CategoryItem> categories, Map<Integer, Question> questionById,
             Map<Integer, List<Question>> subsByParentId) {
         int id = (int) Double.parseDouble(idStr);
@@ -240,7 +242,7 @@ public class QuestionnaireParser {
         }
 
         Question question = new Question(id, categoryName, subCatName, questionText,
-                answerType, answerOptions, explanation, parentId, triggerValue);
+                answerType, answerOptions, explanation, parentId, triggerValue, tag);
         questionById.put(id, question);
 
         if (parentId > 0) {

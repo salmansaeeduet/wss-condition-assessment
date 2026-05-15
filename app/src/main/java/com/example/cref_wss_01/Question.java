@@ -16,13 +16,14 @@ public class Question implements Parcelable {
     private String explanation;
     private int parentId;       // 0 = top-level question
     private String triggerValue; // parent answer value that activates this sub-question
+    private String tag;          // stable identifier from questionnaire Tag column; empty if not set
 
     // Not Parcelable — populated by QuestionnaireParser after all rows are read.
     private final List<Question> subQuestions = new ArrayList<>();
 
     public Question(int id, String category, String subCategory, String questionText,
                     String answerType, String answerOptions, String explanation,
-                    int parentId, String triggerValue) {
+                    int parentId, String triggerValue, String tag) {
         this.id = id;
         this.category = category;
         this.subCategory = subCategory;
@@ -32,6 +33,7 @@ public class Question implements Parcelable {
         this.explanation = explanation;
         this.parentId = parentId;
         this.triggerValue = triggerValue != null ? triggerValue : "";
+        this.tag = tag != null ? tag : "";
     }
 
     protected Question(Parcel in) {
@@ -44,6 +46,7 @@ public class Question implements Parcelable {
         explanation = in.readString();
         parentId = in.readInt();
         triggerValue = in.readString();
+        tag = in.readString();
     }
 
     public static final Creator<Question> CREATOR = new Creator<Question>() {
@@ -74,6 +77,7 @@ public class Question implements Parcelable {
         dest.writeString(explanation);
         dest.writeInt(parentId);
         dest.writeString(triggerValue);
+        dest.writeString(tag);
     }
 
     public int getId() { return id; }
@@ -85,6 +89,7 @@ public class Question implements Parcelable {
     public String getExplanation() { return explanation; }
     public int getParentId() { return parentId; }
     public String getTriggerValue() { return triggerValue; }
+    public String getTag() { return tag; }
     public List<Question> getSubQuestions() { return subQuestions; }
 
     public void addSubQuestion(Question sub) {

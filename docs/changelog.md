@@ -4,6 +4,25 @@ All notable changes to the Android app, newest first.
 
 ---
 
+## 2026-05-15 (latest)
+
+### Stable mandatory-field tags — decouple required fields from question IDs
+**Files:** `Question.java`, `QuestionnaireParser.java`, `RequiredField.java`, `SurveyListActivity.java`, `SurveyExporter.java`, `res/values/arrays.xml`
+
+Previously, `R.array.export_required_fields` used integer question IDs (e.g., `"9:Name of Scheme"`). These IDs are row-based and change whenever the questionnaire is modified, breaking export validation and the survey-list title.
+
+**Changes:**
+
+- Added a `Tag` column (column J, index 9) to the questionnaire XLSX. Any question can have a short stable identifier (e.g., `SCHEME_NAME`, `INFO_PROVIDER`). Most rows leave it blank.
+- `Question` gains a `tag` field (String, empty if unset). `QuestionnaireParser.processRow` reads column 9 and passes it through; `Parcelable` serialisation updated accordingly.
+- `RequiredField.parseAll` now takes a `List<Question>` argument and accepts entries in the form `"TAG:Label"`. It resolves each tag to an integer question ID at runtime by searching the question list. Questions with no matching tag are silently omitted — a misconfigured entry never crashes the export flow.
+- `arrays.xml` entries updated from `"9:Name of Scheme"` / `"3:Information Provider Name"` to `"SCHEME_NAME:Name of Scheme"` / `"INFO_PROVIDER:Information Provider Name"`.
+- Both call sites (`SurveyListActivity`, `SurveyExporter`) updated to pass the question list.
+
+**XLSX change required:** Add column J header `Tag` and set `SCHEME_NAME` on the "Name of Scheme" question row and `INFO_PROVIDER` on the "Information Provider Name" question row. The app will not export until those tags are present and the required fields resolve.
+
+---
+
 ## 2026-05-15
 
 ### Fix: photo attachment crash — FileProvider authority + path mismatch

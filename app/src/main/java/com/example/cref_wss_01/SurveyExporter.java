@@ -24,7 +24,7 @@ public class SurveyExporter {
     private static final String TAG = "SurveyExporter";
 
     public static File export(Context context, SurveyWithAnswers surveyWithAnswers, List<Question> allQuestions) {
-        List<RequiredField> fields = RequiredField.parseAll(context);
+        List<RequiredField> fields = RequiredField.parseAll(context, allQuestions);
 
         String part1 = fields.size() > 0
                 ? SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(0).id) : "";

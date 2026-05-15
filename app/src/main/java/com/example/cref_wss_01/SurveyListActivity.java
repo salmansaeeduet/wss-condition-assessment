@@ -49,9 +49,8 @@ public class SurveyListActivity extends AppCompatActivity
         setSupportActionBar(toolbar);
 
         repository = new SurveyRepository(getApplication());
-        requiredFields = RequiredField.parseAll(this);
 
-        // Load all top-level questions from the configured CSV (for export and completion %)
+        // Load all top-level questions from the configured XLSX (for export and completion %)
         List<CategoryItem> categoryItems = QuestionnaireParser.parseHierarchical(
                 this, getString(R.string.questionnaire_file), getString(R.string.questionnaire_sheet));
         for (CategoryItem category : categoryItems) {
@@ -62,6 +61,8 @@ public class SurveyListActivity extends AppCompatActivity
                 }
             }
         }
+
+        requiredFields = RequiredField.parseAll(this, allQuestions);
 
         int titleQuestionId = requiredFields.isEmpty() ? 0 : requiredFields.get(0).id;
 
