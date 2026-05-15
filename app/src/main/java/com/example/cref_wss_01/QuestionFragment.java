@@ -117,7 +117,7 @@ public class QuestionFragment extends Fragment {
                                     else if (mimeType.startsWith("audio")) mediaType = "AUDIO";
                                 }
                                 Uri newUri = FileProvider.getUriForFile(requireContext(),
-                                        "com.example.cref_wss_01.provider", copiedFile);
+                                        requireContext().getPackageName() + ".provider", copiedFile);
                                 saveMediaAttachment(newUri, copiedFile.getAbsolutePath(), mediaType);
                             }
                         } catch (IOException e) {
@@ -168,7 +168,7 @@ public class QuestionFragment extends Fragment {
                                 File copiedFile = copyUriToInternalStorage(audioUri);
                                 if (copiedFile != null) {
                                     Uri newUri = FileProvider.getUriForFile(requireContext(),
-                                            "com.example.cref_wss_01.provider", copiedFile);
+                                            requireContext().getPackageName() + ".provider", copiedFile);
                                     saveMediaAttachment(newUri, copiedFile.getAbsolutePath(), "AUDIO");
                                 }
                             } catch (IOException e) {
@@ -354,7 +354,7 @@ public class QuestionFragment extends Fragment {
             File mediaFile = createMediaFile("PHOTO");
             currentMediaFilePath = mediaFile.getAbsolutePath();
             currentMediaUri = FileProvider.getUriForFile(getContext(),
-                    "com.example.cref_wss_01.provider", mediaFile);
+                    requireContext().getPackageName() + ".provider", mediaFile);
             takePictureLauncher.launch(currentMediaUri);
         } catch (IOException ex) {
             log("ERROR creating photo file: " + ex.getMessage());
@@ -368,7 +368,7 @@ public class QuestionFragment extends Fragment {
             File mediaFile = createMediaFile("VIDEO");
             currentMediaFilePath = mediaFile.getAbsolutePath();
             currentMediaUri = FileProvider.getUriForFile(getContext(),
-                    "com.example.cref_wss_01.provider", mediaFile);
+                    requireContext().getPackageName() + ".provider", mediaFile);
             takeVideoLauncher.launch(currentMediaUri);
         } catch (IOException ex) {
             log("ERROR creating video file: " + ex.getMessage());

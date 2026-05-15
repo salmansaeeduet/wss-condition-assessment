@@ -192,7 +192,7 @@ public class SurveyListActivity extends AppCompatActivity
             Toast.makeText(this, "File not found for sharing.", Toast.LENGTH_SHORT).show();
             return;
         }
-        Uri fileUri = FileProvider.getUriForFile(this, "com.example.cref_wss_01.provider", file);
+        Uri fileUri = FileProvider.getUriForFile(this, getPackageName() + ".provider", file);
         Intent shareIntent = new Intent();
         shareIntent.setAction(Intent.ACTION_SEND);
         shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
