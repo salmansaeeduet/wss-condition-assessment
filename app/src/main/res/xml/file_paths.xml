@@ -4,8 +4,9 @@
     <files-path name="my_internal_files" path="." />
     <external-path name="documents" path="Documents" />
 
-    <!-- These are for files created directly by the app's camera/video intents -->
-    <external-path name="my_images" path="Android/data/com.example.cref_wss_01/files/Pictures" />
-    <external-path name="my_videos" path="Android/data/com.example.cref_wss_01/files/Movies" />
-    <external-path name="my_audio" path="Android/data/com.example.cref_wss_01/files/Music" />
+    <!-- App-private external storage for camera/video captures (external-files-path
+         resolves to getExternalFilesDir() automatically, no app ID hardcoding needed) -->
+    <external-files-path name="my_images" path="Pictures/" />
+    <external-files-path name="my_videos" path="Movies/" />
+    <external-files-path name="my_audio" path="Music/" />
 </paths>
