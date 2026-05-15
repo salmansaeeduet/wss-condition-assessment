@@ -1,5 +1,9 @@
 package com.example.cref_wss_01;
 
+import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
+import android.provider.OpenableColumns;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,6 +14,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
+import java.io.File;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.List;
@@ -104,8 +109,16 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
         if (survey.lastExportedZipPath != null && !survey.lastExportedZipPath.isEmpty()) {
             holder.shareButton.setVisibility(View.VISIBLE);
             holder.shareButton.setOnClickListener(v -> { if (shareListener != null) shareListener.onShareClick(survey); });
+            String name = getDisplayName(holder.itemView.getContext(), survey.lastExportedZipPath);
+            if (!name.isEmpty()) {
+                holder.exportedFileText.setText("Last export: " + name);
+                holder.exportedFileText.setVisibility(View.VISIBLE);
+            } else {
+                holder.exportedFileText.setVisibility(View.GONE);
+            }
         } else {
             holder.shareButton.setVisibility(View.GONE);
+            holder.exportedFileText.setVisibility(View.GONE);
         }
     }
 
@@ -114,10 +127,24 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
         return surveys.size();
     }
 
+    private static String getDisplayName(Context ctx, String storedUri) {
+        if (storedUri == null || storedUri.isEmpty()) return "";
+        Uri uri = Uri.parse(storedUri);
+        if ("content".equals(uri.getScheme())) {
+            try (Cursor c = ctx.getContentResolver().query(uri,
+                    new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) return c.getString(0);
+            } catch (Exception ignored) {}
+        }
+        String path = uri.getPath();
+        return path != null ? new File(path).getName() : "";
+    }
+
     public static class ViewHolder extends RecyclerView.ViewHolder {
         TextView wssName;
         TextView surveyDate;
         TextView completionText;
+        TextView exportedFileText;
         RelativeLayout cardBackground;
         ImageView deleteButton;
         ImageView exportButton;
@@ -128,6 +155,7 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
             wssName = itemView.findViewById(R.id.wss_name_text);
             surveyDate = itemView.findViewById(R.id.survey_date_text);
             completionText = itemView.findViewById(R.id.completion_text);
+            exportedFileText = itemView.findViewById(R.id.exported_file_text);
             cardBackground = itemView.findViewById(R.id.card_background);
             exportButton = itemView.findViewById(R.id.export_button);
             deleteButton = itemView.findViewById(R.id.delete_button);

@@ -6,6 +6,71 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-15 (latest)
 
+### Show exported filename in success dialog and survey card
+**Files modified:** `SurveyListActivity.java`, `SurveyAdapter.java`, `survey_item.xml`
+
+After a successful export the confirmation dialog now shows the exact ZIP filename (e.g. `"File: SchemeName_Provider_260515143022.zip"`) beneath the folder message. Each survey card in the list also shows a persistent `"Last export: <filename>"` line in italic below the date, so surveyors can always see which file was last sent without opening the export menu again.
+
+`getDisplayName(Uri)` queries `OpenableColumns.DISPLAY_NAME` via the ContentResolver for `content://` URIs (MediaStore) and falls back to `File.getName()` for legacy `file://` URIs.
+
+---
+
+### Fix: export ZIP saved to inaccessible app-private directory on Android 10+
+**Files modified:** `SurveyExporter.java`, `file_paths.xml`
+
+Exports were previously written to `getExternalFilesDir()` (app-private external storage), which is invisible to the system file picker and to other apps — making import testing impossible and preventing manual file retrieval.
+
+**Fix:** `SurveyExporter` now uses two paths based on API level:
+- **API 29+ (Android 10+):** `MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)` with `RELATIVE_PATH = "Documents/"`. No storage permission needed; returns a `content://` URI usable for sharing directly.
+- **API < 29:** `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOCUMENTS)` written directly; URI wrapped via FileProvider for sharing.
+
+An earlier attempt used `MediaStore.Downloads.EXTERNAL_CONTENT_URI`, which targets the Downloads collection and returned null on Android 16 when `RELATIVE_PATH` was set to `"Documents/"`. Switching to `MediaStore.Files` resolved this.
+
+`file_paths.xml` gained `<external-path name="public_documents" path="Documents/" />` to allow FileProvider to serve the public Documents path on API < 29.
+
+---
+
+### Survey import and merge
+**New files:** `SurveyImporter.java`, `MergeConflict.java`, `ImportSession.java`, `ImportPreviewActivity.java`, `MergeConflictActivity.java`, `ConflictResolutionAdapter.java`, `activity_import_preview.xml`, `activity_merge_conflict.xml`, `item_merge_conflict.xml`, `item_survey_select.xml`, `ic_import.xml`  
+**Files modified:** `SurveyExporter.java`, `SurveyRepository.java`, `SurveyListActivity.java`, `activity_survey_list.xml`, `AndroidManifest.xml`
+
+Surveyors working the same scheme from different devices can now share a partially completed survey ZIP with a colleague who merges it into their own copy, resolving answer conflicts in a single review screen.
+
+**Export format change:**  
+`SurveyExporter` now writes a `Tag` column as the first CSV column (previously the first column was `Question`). The importer detects the format version from the header, so old ZIP exports remain importable via question-text fallback matching.
+
+**Import entry points:**
+- New FAB (download arrow icon) in `SurveyListActivity` opens a file picker filtered to `application/zip`.
+- `ImportPreviewActivity` is registered as `ACTION_VIEW` and `ACTION_SEND` handler for `application/zip`, so a ZIP shared from Files, WhatsApp, or email opens the app directly.
+
+**Import / merge flow:**
+1. `SurveyImporter.parseZip()` extracts `survey_data.csv` + all media files to a temp directory under `getCacheDir()`.
+2. `ImportPreviewActivity` shows a summary card (survey name, answer count, media count) and lets the user choose:
+   - **Create new survey** — all imported answers applied automatically, no conflict check.
+   - **Merge with existing** — user picks a local survey from a list; conflicts are computed.
+3. If merging with no conflicts: a confirmation dialog shows the auto-merge count → one tap executes.
+4. If true conflicts exist (both sides have different answers for the same question): `MergeConflictActivity` opens, listing every conflict with local vs imported values side-by-side.
+
+**Conflict resolution (per question):**
+
+| Radio option | When available |
+|---|---|
+| Keep Local | Always |
+| Keep Imported | Always |
+| Combine | `TEXT` (newline + `---` separator), `MULTIPLE_CHOICE_MULTI` (union of selections), `COMPOUND` (field-level: keep local value, fill blanks from imported), `GEOMETRY` (merge JSON geometry arrays) |
+
+Attachments (PHOTO/VIDEO/AUDIO) are **always merged automatically** — both sides' files are copied and inserted regardless of the answer resolution choice.
+
+**`SurveyRepository.executeBatchUpsert()`** added: upserts a list of `Answer` records and inserts a list of `MediaAttachment` records in a single executor-queued operation, used by both new activities.
+
+**Question matching in importer:** tries tag match first (new CSV format), falls back to normalised question-text match (old CSV format or missing tag). Recurses into sub-questions.
+
+**Temp file cleanup:** temp directory under `getCacheDir()` is deleted after successful merge execution. On cancellation (user backs out) it is cleaned up the next time a new import starts, or by the OS cache eviction policy.
+
+---
+
+## 2026-05-15
+
 ### Stable mandatory-field tags — decouple required fields from question IDs
 **Files:** `Question.java`, `QuestionnaireParser.java`, `RequiredField.java`, `SurveyListActivity.java`, `SurveyExporter.java`, `res/values/arrays.xml`
 

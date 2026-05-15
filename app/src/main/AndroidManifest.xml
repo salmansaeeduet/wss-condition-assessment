@@ -72,6 +72,27 @@
             android:exported="false"
             android:theme="@style/Theme.CREF_WSS_01" />
 
+        <activity
+            android:name=".ImportPreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CREF_WSS_01">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".MergeConflictActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CREF_WSS_01" />
+
     </application>
 
 </manifest>

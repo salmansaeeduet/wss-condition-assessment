@@ -2,7 +2,8 @@
 <paths>
     <!-- This allows FileProvider to access the app's internal files directory -->
     <files-path name="my_internal_files" path="." />
-    <external-path name="documents" path="Documents" />
+    <!-- API < 29: export writes to shared public Documents; FileProvider needs this to share it -->
+    <external-path name="public_documents" path="Documents/" />
 
     <!-- App-private external storage for camera/video captures (external-files-path
          resolves to getExternalFilesDir() automatically, no app ID hardcoding needed) -->

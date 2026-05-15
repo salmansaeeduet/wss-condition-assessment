@@ -1,7 +1,12 @@
 package com.example.cref_wss_01;
 
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.Log;
 
 import java.io.BufferedInputStream;
@@ -11,6 +16,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -23,7 +29,8 @@ public class SurveyExporter {
 
     private static final String TAG = "SurveyExporter";
 
-    public static File export(Context context, SurveyWithAnswers surveyWithAnswers, List<Question> allQuestions) {
+    /** Returns a content URI (API 29+) or file URI (API < 29) for the exported ZIP, or null on failure. */
+    public static Uri export(Context context, SurveyWithAnswers surveyWithAnswers, List<Question> allQuestions) {
         List<RequiredField> fields = RequiredField.parseAll(context, allQuestions);
 
         String part1 = fields.size() > 0
@@ -33,11 +40,14 @@ public class SurveyExporter {
                 ? fields.get(1).getDisplayValue(
                         SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(1).id)) : "";
 
-        if (part1 == null || part1.isEmpty() || part2 == null || part2.isEmpty()) return null;
+        boolean part1Missing = fields.size() > 0 && (part1 == null || part1.isEmpty());
+        boolean part2Missing = fields.size() > 1 && (part2 == null || part2.isEmpty());
+        if (part1Missing || part2Missing) return null;
 
         try {
+            // Build CSV
             StringBuilder csvData = new StringBuilder();
-            csvData.append("Question,Answer,Remarks,Photo Count,Video Count,Audio Count,Attachments\n");
+            csvData.append("Tag,Question,Answer,Remarks,Photo Count,Video Count,Audio Count,Attachments\n");
 
             for (Question question : allQuestions) {
                 Answer answer = findAnswer(surveyWithAnswers.answers, question.getId());
@@ -50,6 +60,8 @@ public class SurveyExporter {
                     return name1.compareTo(name2);
                 });
 
+                String tag = question.getTag() != null ? question.getTag() : "";
+                csvData.append("\"").append(tag).append("\",");
                 csvData.append("\"").append(question.getQuestionText()).append("\",");
                 csvData.append("\"").append(answer != null && answer.answerValue != null ? answer.answerValue : "").append("\",");
                 csvData.append("\"").append(answer != null && answer.remarks != null ? answer.remarks : "").append("\",");
@@ -70,41 +82,81 @@ public class SurveyExporter {
                 csvData.append("\n");
             }
 
-            File tempDir = context.getCacheDir();
-            File csvFile = new File(tempDir, "survey_data.csv");
+            // Write CSV to a temp file
+            File csvFile = new File(context.getCacheDir(), "survey_data.csv");
             FileWriter writer = new FileWriter(csvFile);
             writer.append(csvData.toString());
             writer.flush();
             writer.close();
 
+            // Build ZIP filename
             String timeStamp = new SimpleDateFormat("yyMMddHHmmss", Locale.US).format(new Date());
-            String baseName = part1.replaceAll("[^a-zA-Z0-9.-]", "_") + "_"
-                    + part2.replaceAll("[^a-zA-Z0-9.-]", "_") + "_" + timeStamp;
+            String safePart1 = part1.replaceAll("[^a-zA-Z0-9.-]", "_");
+            String safePart2 = part2.replaceAll("[^a-zA-Z0-9.-]", "_");
+            String baseName = (safePart2.isEmpty() ? safePart1 : safePart1 + "_" + safePart2) + "_" + timeStamp;
 
-            File documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
-            File zipFile = new File(documentsDir, baseName + ".zip");
-            int counter = 0;
-            while (zipFile.exists()) zipFile = new File(documentsDir, baseName + " (" + ++counter + ").zip");
-
-            try (FileOutputStream fos = new FileOutputStream(zipFile);
-                 ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(fos))) {
-                addToZip(zos, csvFile, "survey_data.csv");
-                if (surveyWithAnswers.attachments != null) {
-                    for (MediaAttachment attachment : surveyWithAnswers.attachments) {
-                        if (attachment.filePath != null) {
-                            File mediaFile = new File(attachment.filePath);
-                            if (mediaFile.exists()) addToZip(zos, mediaFile, mediaFile.getName());
-                        }
-                    }
-                }
+            Uri result;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                result = writeViaMediaStore(context, csvFile, surveyWithAnswers.attachments, baseName);
+            } else {
+                result = writeViaFile(context, csvFile, surveyWithAnswers.attachments, baseName);
             }
 
             csvFile.delete();
-            return zipFile;
+            return result;
 
         } catch (Exception e) {
             Log.e(TAG, "Error during export", e);
             return null;
+        }
+    }
+
+    /** Android 10+: write ZIP directly into the public Documents folder via MediaStore. */
+    private static Uri writeViaMediaStore(Context context, File csvFile,
+                                          List<MediaAttachment> attachments, String baseName) throws IOException {
+        ContentValues cv = new ContentValues();
+        cv.put(MediaStore.MediaColumns.DISPLAY_NAME, baseName + ".zip");
+        cv.put(MediaStore.MediaColumns.MIME_TYPE, "application/zip");
+        cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/");
+
+        ContentResolver cr = context.getContentResolver();
+        Uri collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+        Uri uri = cr.insert(collection, cv);
+        if (uri == null) throw new IOException("MediaStore insert returned null");
+
+        try (OutputStream os = cr.openOutputStream(uri);
+             ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(os))) {
+            writeZipContents(zos, csvFile, attachments);
+        }
+        return uri;
+    }
+
+    /** Android 9 and below: write ZIP directly to the public Documents directory. */
+    private static Uri writeViaFile(Context context, File csvFile,
+                                    List<MediaAttachment> attachments, String baseName) throws IOException {
+        File documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+        documentsDir.mkdirs();
+        File zipFile = new File(documentsDir, baseName + ".zip");
+        int counter = 0;
+        while (zipFile.exists()) zipFile = new File(documentsDir, baseName + " (" + ++counter + ").zip");
+
+        try (FileOutputStream fos = new FileOutputStream(zipFile);
+             ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(fos))) {
+            writeZipContents(zos, csvFile, attachments);
+        }
+        return Uri.fromFile(zipFile);
+    }
+
+    private static void writeZipContents(ZipOutputStream zos, File csvFile,
+                                         List<MediaAttachment> attachments) throws IOException {
+        addToZip(zos, csvFile, "survey_data.csv");
+        if (attachments != null) {
+            for (MediaAttachment attachment : attachments) {
+                if (attachment.filePath != null) {
+                    File mediaFile = new File(attachment.filePath);
+                    if (mediaFile.exists()) addToZip(zos, mediaFile, mediaFile.getName());
+                }
+            }
         }
     }
 

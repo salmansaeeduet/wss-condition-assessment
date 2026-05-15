@@ -92,4 +92,18 @@ import java.util.concurrent.Executors;public class SurveyRepository {
     public void getSurveyWithAnswersAndAttachments(long surveyId, java.util.function.Consumer<SurveyWithAnswers> callback) {
         executor.execute(() -> callback.accept(surveyDao.getSurveyWithAnswersAndAttachments(surveyId)));
     }
+
+    public void executeBatchUpsert(List<Answer> answers, List<MediaAttachment> attachments,
+                                   Runnable onComplete) {
+        executor.execute(() -> {
+            for (Answer a : answers) {
+                long id = answerDao.insert(a);
+                if (id == -1) answerDao.update(a);
+            }
+            for (MediaAttachment att : attachments) {
+                mediaAttachmentDao.insert(att);
+            }
+            if (onComplete != null) onComplete.run();
+        });
+    }
 }

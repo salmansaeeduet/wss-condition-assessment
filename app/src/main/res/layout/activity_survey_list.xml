@@ -25,6 +25,16 @@
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_import_survey"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="144dp"
+        android:contentDescription="Import survey"
+        app:srcCompat="@drawable/ic_import" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab_offline_maps"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
