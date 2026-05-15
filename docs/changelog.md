@@ -6,6 +6,28 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-15
 
+### Fix: photo attachment crash — FileProvider authority + path mismatch
+**Files:** `QuestionFragment.java`, `SurveyListActivity.java`, `res/xml/file_paths.xml`
+
+The app's **application ID** (`com.wss.cref.assessment.v1`) and its **Java package namespace** (`com.example.cref_wss_01`) are different. Two separate places assumed they were the same, causing back-to-back crashes when tapping "Add Photo":
+
+**Crash 1 — wrong authority string in code:**  
+`FileProvider.getUriForFile()` was called with the hardcoded string `"com.example.cref_wss_01.provider"`, but the manifest registers the provider as `"${applicationId}.provider"` = `"com.wss.cref.assessment.v1.provider"`. Android couldn't find the provider registration → `IllegalArgumentException: Couldn't find meta-data for provider`.  
+Fix: replaced all hardcoded authority strings in `QuestionFragment` (photo, video, audio capture + gallery import) and `SurveyListActivity` (survey export share) with `getPackageName() + ".provider"`.
+
+**Crash 2 — wrong path root in file_paths.xml:**  
+`file_paths.xml` used `<external-path path="Android/data/com.example.cref_wss_01/files/Pictures" />`, but the actual runtime path was `Android/data/com.wss.cref.assessment.v1/files/Pictures`. FileProvider couldn't match the file → `IllegalArgumentException: Failed to find configured root`.  
+Fix: replaced `<external-path>` (requires full path from storage root, package name embedded) with `<external-files-path>` (maps directly to `Context.getExternalFilesDir()` at runtime, no app ID in path).
+
+---
+
+### Fix: unreported IOException in MapSearchHelper lambda
+**File:** `MapSearchHelper.java`
+
+`conn.getResponseCode()` was called inside a `MAIN.post(() -> ...)` lambda. `Runnable.run()` cannot declare checked exceptions, so the `IOException` from `getResponseCode()` was unreported — compile error. Fix: read the status code once in the surrounding `try` block and capture the `int` in the lambda.
+
+---
+
 ### Place search in all map activities (Nominatim geocoding)
 **New file:** `MapSearchHelper.java`  
 **Files modified:** `MapPickerActivity.java`, `MapAreaDownloadActivity.java`, `GeometryPickerActivity.java`, `activity_map_picker.xml`, `activity_map_area_download.xml`, `activity_geometry_picker.xml`
