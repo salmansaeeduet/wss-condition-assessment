@@ -27,9 +27,11 @@ public class SurveyExporter {
         List<RequiredField> fields = RequiredField.parseAll(context, allQuestions);
 
         String part1 = fields.size() > 0
-                ? SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(0).id) : "";
+                ? fields.get(0).getDisplayValue(
+                        SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(0).id)) : "";
         String part2 = fields.size() > 1
-                ? SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(1).id) : "";
+                ? fields.get(1).getDisplayValue(
+                        SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(1).id)) : "";
 
         if (part1 == null || part1.isEmpty() || part2 == null || part2.isEmpty()) return null;
 

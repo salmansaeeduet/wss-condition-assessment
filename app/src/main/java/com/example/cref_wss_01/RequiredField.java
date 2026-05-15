@@ -8,11 +8,13 @@ public class RequiredField {
     public final int id;
     public final String label;
     public final String tag;
+    public final String answerType;
 
-    private RequiredField(int id, String label, String tag) {
+    private RequiredField(int id, String label, String tag, String answerType) {
         this.id = id;
         this.label = label;
         this.tag = tag;
+        this.answerType = answerType != null ? answerType : "";
     }
 
     /**
@@ -30,16 +32,40 @@ public class RequiredField {
             if (colon <= 0) continue;
             String tag   = entry.substring(0, colon).trim();
             String label = entry.substring(colon + 1).trim();
-            int id = findIdByTag(questions, tag);
-            if (id != -1) result.add(new RequiredField(id, label, tag));
+            Question q = findByTag(questions, tag);
+            if (q != null) result.add(new RequiredField(q.getId(), label, tag, q.getAnswerType()));
         }
         return result;
     }
 
-    private static int findIdByTag(List<Question> questions, String tag) {
+    /**
+     * Returns the human-readable value for this field from a raw DB answer string.
+     * For COMPOUND answers ("Label=value||Label=value...") returns the first field's value.
+     * For all other types returns the raw string unchanged.
+     */
+    public String getDisplayValue(String raw) {
+        if (raw == null) return "";
+        if ("COMPOUND".equals(answerType)) return extractFirstCompoundField(raw);
+        return raw;
+    }
+
+    /**
+     * Extracts the value of the first sub-field from a COMPOUND answer string.
+     * Format: "Label=value||Label=value||..."
+     * Returns the raw string unchanged if it doesn't match the pattern.
+     */
+    public static String extractFirstCompoundField(String raw) {
+        if (raw == null) return "";
+        int eq = raw.indexOf('=');
+        if (eq <= 0) return raw;
+        int sep = raw.indexOf("||");
+        return raw.substring(eq + 1, sep < 0 ? raw.length() : sep);
+    }
+
+    private static Question findByTag(List<Question> questions, String tag) {
         for (Question q : questions) {
-            if (tag.equalsIgnoreCase(q.getTag())) return q.getId();
+            if (tag.equalsIgnoreCase(q.getTag())) return q;
         }
-        return -1;
+        return null;
     }
 }

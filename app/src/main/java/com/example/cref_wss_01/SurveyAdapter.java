@@ -19,6 +19,7 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
     private List<SurveyWithAnswers> surveys;
     private final int totalQuestions;
     private final int surveyTitleQuestionId;
+    private final String surveyTitleAnswerType;
     private final OnDeleteClickListener deleteListener;
     private final OnSurveyClickListener listener;
     private final OnExportClickListener exportListener;
@@ -30,7 +31,7 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
     public interface OnExportClickListener { void onExportClick(SurveyWithAnswers surveyWithAnswers); }
 
     public SurveyAdapter(List<SurveyWithAnswers> surveys, int totalQuestions,
-                         int surveyTitleQuestionId,
+                         int surveyTitleQuestionId, String surveyTitleAnswerType,
                          OnSurveyClickListener listener,
                          OnExportClickListener exportListener,
                          OnDeleteClickListener deleteListener,
@@ -38,6 +39,7 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
         this.surveys = surveys;
         this.totalQuestions = totalQuestions;
         this.surveyTitleQuestionId = surveyTitleQuestionId;
+        this.surveyTitleAnswerType = surveyTitleAnswerType != null ? surveyTitleAnswerType : "";
         this.listener = listener;
         this.exportListener = exportListener;
         this.deleteListener = deleteListener;
@@ -65,7 +67,10 @@ public class SurveyAdapter extends RecyclerView.Adapter<SurveyAdapter.ViewHolder
         for (Answer answer : surveyWithAnswers.answers) {
             if (answer.questionId == surveyTitleQuestionId
                     && answer.answerValue != null && !answer.answerValue.isEmpty()) {
-                surveyTitle = answer.answerValue;
+                String raw = answer.answerValue;
+                surveyTitle = "COMPOUND".equals(surveyTitleAnswerType)
+                        ? RequiredField.extractFirstCompoundField(raw) : raw;
+                if (surveyTitle.isEmpty()) surveyTitle = "Unnamed Survey";
                 break;
             }
         }

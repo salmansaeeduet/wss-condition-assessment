@@ -65,10 +65,11 @@ public class SurveyListActivity extends AppCompatActivity
         requiredFields = RequiredField.parseAll(this, allQuestions);
 
         int titleQuestionId = requiredFields.isEmpty() ? 0 : requiredFields.get(0).id;
+        String titleAnswerType = requiredFields.isEmpty() ? "" : requiredFields.get(0).answerType;
 
         RecyclerView recyclerView = findViewById(R.id.survey_recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new SurveyAdapter(new ArrayList<>(), totalQuestions, titleQuestionId,
+        adapter = new SurveyAdapter(new ArrayList<>(), totalQuestions, titleQuestionId, titleAnswerType,
                 this, this, this, this);
         repository.getAllSurveysWithAnswers(surveys -> runOnUiThread(() -> adapter.setSurveys(surveys)));
         recyclerView.setAdapter(adapter);
@@ -147,8 +148,8 @@ public class SurveyListActivity extends AppCompatActivity
     public void onExportClick(SurveyWithAnswers surveyWithAnswers) {
         // Validate all required fields
         for (RequiredField field : requiredFields) {
-            String val = findAnswerValue(surveyWithAnswers.answers, field.id);
-            if (val == null || val.isEmpty()) {
+            String displayVal = field.getDisplayValue(findAnswerValue(surveyWithAnswers.answers, field.id));
+            if (displayVal.isEmpty()) {
                 new AlertDialog.Builder(this)
                         .setTitle("Missing Information")
                         .setMessage("\"" + field.label + "\" is required before exporting. Go to that question now?")
