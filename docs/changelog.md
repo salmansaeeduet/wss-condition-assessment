@@ -6,6 +6,18 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-16 (latest)
 
+### Create parallel development fork — cref_wss_02
+**Action:** Copied `cref_wss_01` to `C:\Users\Salman\AndroidStudioProjects\cref_wss_02` to allow parallel development on a separate app variant. The fork starts from v1.2 (all features up to the hybrid geometry system). Changes in the fork:
+- `applicationId` → `com.wss.cref.assessment.v2` (allows both to install side-by-side on the same device)
+- `app_name` → `"WSS Condition Assessment 2"`
+- `rootProject.name` → `CREF_WSS_02`
+- Java namespace (`com.example.cref_wss_01`) and all source files left unchanged
+- Fresh git repo, no shared history; no GitHub remote yet
+
+---
+
+## 2026-05-16
+
 ### Hybrid geometry system: named GEOMETRY items + sketch attachments on all questions
 **Files modified:** `GeometryUtils.java`, `GeometryPickerActivity.java`, `Question.java`, `QuestionnaireParser.java`, `QuestionFragment.java`, `SurveyMapActivity.java`, `SurveyRepository.java`, `MediaAttachmentDao.java`, `SurveyImporter.java`, `fragment_question.xml`, `view_sub_question.xml`
 
