@@ -325,18 +325,22 @@ public class SurveyImporter {
 
             // Attachments: always copy imported ones regardless of answer resolution
             if (destDir != null) {
+                File geomDir = new File(ctx.getFilesDir(), "geom");
+                geomDir.mkdirs();
                 for (String tempPath : c.importedAttachmentPaths) {
                     File src = new File(tempPath);
                     if (!src.exists()) continue;
-                    File dest = uniqueDest(destDir, src.getName());
+                    String mediaType = guessMediaType(src.getName());
+                    File targetDir = "GEOMETRY".equals(mediaType) ? geomDir : destDir;
+                    File dest = uniqueDest(targetDir, src.getName());
                     try {
                         copyFile(src, dest);
                         MediaAttachment att = new MediaAttachment();
                         att.surveyId   = targetSurveyId;
                         att.questionId = c.question.getId();
                         att.filePath   = dest.getAbsolutePath();
-                        att.uri        = dest.getAbsolutePath();
-                        att.mediaType  = guessMediaType(src.getName());
+                        att.uri        = android.net.Uri.fromFile(dest).toString();
+                        att.mediaType  = mediaType;
                         bundle.attachments.add(att);
                     } catch (IOException e) {
                         Log.e(TAG, "Failed to copy attachment: " + tempPath, e);
@@ -446,6 +450,7 @@ public class SurveyImporter {
                 || lower.endsWith(".avi")) return "VIDEO";
         if (lower.endsWith(".mp3") || lower.endsWith(".aac") || lower.endsWith(".wav")
                 || lower.endsWith(".m4a") || lower.endsWith(".ogg")) return "AUDIO";
+        if (lower.endsWith(".geom")) return "GEOMETRY";
         return "FILE";
     }
 

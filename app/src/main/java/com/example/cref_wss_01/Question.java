@@ -17,6 +17,7 @@ public class Question implements Parcelable {
     private int parentId;       // 0 = top-level question
     private String triggerValue; // parent answer value that activates this sub-question
     private String tag;          // stable identifier from questionnaire Tag column; empty if not set
+    private String geomLabel;    // default item name for GEOMETRY questions (from AnswerOptions col)
 
     // Not Parcelable — populated by QuestionnaireParser after all rows are read.
     private final List<Question> subQuestions = new ArrayList<>();
@@ -47,6 +48,7 @@ public class Question implements Parcelable {
         parentId = in.readInt();
         triggerValue = in.readString();
         tag = in.readString();
+        geomLabel = in.readString();
     }
 
     public static final Creator<Question> CREATOR = new Creator<Question>() {
@@ -78,6 +80,7 @@ public class Question implements Parcelable {
         dest.writeInt(parentId);
         dest.writeString(triggerValue);
         dest.writeString(tag);
+        dest.writeString(geomLabel);
     }
 
     public int getId() { return id; }
@@ -90,6 +93,8 @@ public class Question implements Parcelable {
     public int getParentId() { return parentId; }
     public String getTriggerValue() { return triggerValue; }
     public String getTag() { return tag; }
+    public String getGeomLabel() { return geomLabel; }
+    public void setGeomLabel(String geomLabel) { this.geomLabel = geomLabel; }
     public List<Question> getSubQuestions() { return subQuestions; }
 
     public void addSubQuestion(Question sub) {

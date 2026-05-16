@@ -4,12 +4,16 @@ import androidx.room.Dao;
 import androidx.room.Delete;
 import androidx.room.Insert;
 import androidx.room.Query;
+import androidx.room.Update;
 import java.util.List;
 
 @Dao
 public interface MediaAttachmentDao {
     @Insert
     void insert(MediaAttachment attachment);
+
+    @Update
+    void update(MediaAttachment attachment);
 
     @Delete
     void delete(MediaAttachment attachment);

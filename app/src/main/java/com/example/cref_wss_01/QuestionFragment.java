@@ -191,6 +191,44 @@ public class QuestionFragment extends Fragment {
 
     private java.util.function.Consumer<String> pendingGeometryConsumer;
 
+    private int sketchTargetQuestionId = -1;
+    private MediaAttachment sketchEditingAttachment = null;
+
+    private final ActivityResultLauncher<android.content.Intent> sketchPickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() != android.app.Activity.RESULT_OK
+                        || result.getData() == null || sketchTargetQuestionId < 0) return;
+                String json = result.getData().getStringExtra("geometry_value");
+                if (json == null || json.isEmpty() || json.equals("[]")) return;
+                final int qId = sketchTargetQuestionId;
+                final MediaAttachment editing = sketchEditingAttachment;
+                sketchTargetQuestionId = -1;
+                sketchEditingAttachment = null;
+                if (getContext() == null) return;
+                java.io.File geomDir = new java.io.File(requireContext().getFilesDir(), "geom");
+                geomDir.mkdirs();
+                String ts = new java.text.SimpleDateFormat("yyMMddHHmmss", java.util.Locale.US).format(new java.util.Date());
+                java.io.File geomFile = new java.io.File(geomDir, surveyId + "_" + qId + "_" + ts + ".geom");
+                try {
+                    java.io.FileWriter fw = new java.io.FileWriter(geomFile);
+                    fw.write(json);
+                    fw.close();
+                } catch (java.io.IOException e) {
+                    android.util.Log.e("QuestionFragment", "Failed to write geom file", e);
+                    return;
+                }
+                if (editing != null) {
+                    java.io.File oldFile = new java.io.File(editing.filePath);
+                    if (oldFile.exists()) oldFile.delete();
+                    editing.filePath = geomFile.getAbsolutePath();
+                    editing.uri = android.net.Uri.fromFile(geomFile).toString();
+                    repository.updateMediaAttachment(editing, () -> onMediaSaved(qId));
+                } else {
+                    currentMediaQuestionId = qId;
+                    saveMediaAttachment(android.net.Uri.fromFile(geomFile), geomFile.getAbsolutePath(), "GEOMETRY");
+                }
+            });
+
     private final ActivityResultLauncher<android.content.Intent> geometryPickerLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == android.app.Activity.RESULT_OK
@@ -294,6 +332,8 @@ public class QuestionFragment extends Fragment {
             currentMediaQuestionId = question.getId();
             getContentLauncher.launch("*/*");
         });
+        ImageButton addSketchButton = view.findViewById(R.id.add_sketch_button);
+        addSketchButton.setOnClickListener(v -> launchSketchPicker(question.getId(), null));
 
         // Navigation buttons
         Button previousButton = view.findViewById(R.id.previous_button);
@@ -483,6 +523,34 @@ public class QuestionFragment extends Fragment {
             playIcon.setLayoutParams(playParams);
             playIcon.setImageResource(R.drawable.ic_play_circle);
             frameLayout.addView(playIcon);
+        } else if ("GEOMETRY".equals(attachment.mediaType)) {
+            imageView.setImageResource(R.drawable.ic_map);
+            imageView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            imageView.setPadding(24, 24, 24, 24);
+            frameLayout.addView(imageView);
+            if (attachment.filePath != null) {
+                try {
+                    String json = new String(java.nio.file.Files.readAllBytes(
+                            java.nio.file.Paths.get(attachment.filePath)));
+                    List<GeometryUtils.GeometryItem> items = GeometryUtils.fromJson(json);
+                    if (!items.isEmpty()) {
+                        TextView tv = new TextView(getContext());
+                        tv.setText(GeometryUtils.summary(items));
+                        tv.setTextSize(10f);
+                        tv.setMaxLines(2);
+                        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                        tv.setGravity(android.view.Gravity.CENTER);
+                        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+                        lp.gravity = android.view.Gravity.BOTTOM;
+                        tv.setLayoutParams(lp);
+                        tv.setBackgroundColor(0xCC000000);
+                        tv.setTextColor(0xFFFFFFFF);
+                        tv.setPadding(4, 2, 4, 2);
+                        frameLayout.addView(tv);
+                    }
+                } catch (java.io.IOException ignored) {}
+            }
         } else {
             imageView.setImageResource(R.drawable.ic_mic);
             frameLayout.addView(imageView);
@@ -498,6 +566,8 @@ public class QuestionFragment extends Fragment {
         MediaAttachment attachment = (MediaAttachment) view.getTag();
         if (isSelectionMode) {
             toggleAttachmentSelection(attachment, view);
+        } else if ("GEOMETRY".equals(attachment.mediaType)) {
+            launchSketchPicker(attachment.questionId, attachment);
         } else {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             Uri uri = Uri.parse(attachment.uri);
@@ -1211,6 +1281,42 @@ public class QuestionFragment extends Fragment {
         mapPickerLauncher.launch(intent);
     }
 
+    private void launchSketchPicker(int questionId, MediaAttachment existingAttachment) {
+        if (getContext() == null) return;
+        sketchTargetQuestionId = questionId;
+        sketchEditingAttachment = existingAttachment;
+
+        repository.getAnswersForSurvey(surveyId, answers -> {
+            if (getActivity() == null || getContext() == null) return;
+            getActivity().runOnUiThread(() -> {
+                org.json.JSONObject otherGeomsJson = new org.json.JSONObject();
+                for (Answer a : answers) {
+                    if (a.answerValue == null || a.answerValue.isEmpty()) continue;
+                    String av = a.answerValue.trim();
+                    if (!av.startsWith("[")) continue;
+                    try {
+                        new org.json.JSONArray(av);
+                        otherGeomsJson.put(String.valueOf(a.questionId), av);
+                    } catch (org.json.JSONException ignored) {}
+                }
+                String existingJson = "";
+                if (existingAttachment != null && existingAttachment.filePath != null) {
+                    try {
+                        existingJson = new String(java.nio.file.Files.readAllBytes(
+                                java.nio.file.Paths.get(existingAttachment.filePath)));
+                    } catch (java.io.IOException ignored) {}
+                }
+                android.content.Intent intent = new android.content.Intent(
+                        getContext(), GeometryPickerActivity.class);
+                intent.putExtra("question_label", question.getQuestionText());
+                intent.putExtra("question_id", questionId);
+                if (!existingJson.isEmpty()) intent.putExtra("existing_value", existingJson);
+                intent.putExtra("other_geoms", otherGeomsJson.toString());
+                sketchPickerLauncher.launch(intent);
+            });
+        });
+    }
+
     private void addGeometryInput(int questionId, LinearLayout container,
             Answer existingAnswer) {
         if (getContext() == null) return;
@@ -1258,6 +1364,8 @@ public class QuestionFragment extends Fragment {
                             getContext(), GeometryPickerActivity.class);
                     intent.putExtra("question_label", question.getQuestionText());
                     intent.putExtra("question_id", questionId);
+                    if (question.getGeomLabel() != null)
+                        intent.putExtra("default_label", question.getGeomLabel());
                     if (existing != null && !existing.isEmpty())
                         intent.putExtra("existing_value", existing);
                     intent.putExtra("other_geoms", otherGeomsJson.toString());
@@ -2127,6 +2235,7 @@ public class QuestionFragment extends Fragment {
         ImageButton subVideoBtn = subQView.findViewById(R.id.sub_add_video_button);
         ImageButton subAudioBtn = subQView.findViewById(R.id.sub_add_audio_button);
         ImageButton subFileBtn = subQView.findViewById(R.id.sub_attach_file_button);
+        ImageButton subSketchBtn = subQView.findViewById(R.id.sub_add_sketch_button);
 
         attachmentsContainerMap.put(subQ.getId(), subAttachmentsContainer);
 
@@ -2149,6 +2258,7 @@ public class QuestionFragment extends Fragment {
             currentMediaQuestionId = subQ.getId();
             getContentLauncher.launch("*/*");
         });
+        subSketchBtn.setOnClickListener(v -> launchSketchPicker(subQ.getId(), null));
 
         repository.getAnswer(surveyId, subQ.getId(), subAnswer -> {
             repository.getAllPreviousAnswersForQuestion(surveyId, subQ.getId(), prevAnswers -> {

@@ -71,6 +71,7 @@ public class GeometryPickerActivity extends AppCompatActivity {
     private int questionColor;
     private float density;
     private int searchVersion = 0;
+    private String defaultLabel;  // from intent "default_label"; null = unlabelled mode
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ public class GeometryPickerActivity extends AppCompatActivity {
 
         int qId      = getIntent().getIntExtra("question_id", 0);
         String label = getIntent().getStringExtra("question_label");
+        defaultLabel = getIntent().getStringExtra("default_label");
 
         questionColor = GeometryUtils.colorForQuestion(qId);
 
@@ -280,6 +282,10 @@ public class GeometryPickerActivity extends AppCompatActivity {
         GeometryUtils.GeometryItem item = new GeometryUtils.GeometryItem(
                 activeDrawType, new ArrayList<>(currentDraft));
         if ("LINE".equals(activeDrawType)) item.arrow = cbArrow.isChecked();
+        if (defaultLabel != null) {
+            int n = completedItems.size() + 1;
+            item.name = (n == 1) ? defaultLabel : defaultLabel + " " + n;
+        }
         addCompletedItem(item);
         currentDraft.clear();
         redrawDraft();
@@ -453,9 +459,10 @@ public class GeometryPickerActivity extends AppCompatActivity {
 
         setPickerMode(PickerMode.EDITING);
 
-        // Show "Edit Text" button for labels
         if ("LABEL".equals(item.type)) {
             showEditLabelText(item);
+        } else if (item.name != null) {
+            showRenameDialog(item);
         }
     }
 
@@ -510,6 +517,22 @@ public class GeometryPickerActivity extends AppCompatActivity {
                         item.text = newText;
                         mapView.invalidate();
                     }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showRenameDialog(GeometryUtils.GeometryItem item) {
+        EditText input = new EditText(this);
+        input.setText(item.name != null ? item.name : "");
+        input.setSelection(input.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle("Rename item")
+                .setView(input)
+                .setPositiveButton("OK", (d, w) -> {
+                    String newName = input.getText().toString().trim();
+                    item.name = newName.isEmpty() ? null : newName;
+                    mapView.invalidate();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -755,6 +778,7 @@ public class GeometryPickerActivity extends AppCompatActivity {
                 case "POLYGON": drawPolygon(canvas, mv); break;
                 case "LABEL":   drawLabel(canvas, mv);   break;
             }
+            if (item.name != null && !item.name.isEmpty()) drawNameLabel(canvas, mv);
         }
 
         private void drawPoint(Canvas c, MapView mv) {
@@ -889,6 +913,42 @@ public class GeometryPickerActivity extends AppCompatActivity {
             dotPaint.setStyle(Paint.Style.FILL);
             if (readOnly) dotPaint.setAlpha(160);
             c.drawCircle(sp.x, sp.y, 5f * density, dotPaint);
+        }
+
+        private void drawNameLabel(Canvas c, MapView mv) {
+            GeoPoint centroid = computeCentroid();
+            if (centroid == null) return;
+            android.graphics.Point sp = new android.graphics.Point();
+            mv.getProjection().toPixels(centroid, sp);
+
+            float ts = 11f * density;
+            Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            textPaint.setColor(Color.WHITE);
+            textPaint.setTextSize(ts);
+            textPaint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            if (readOnly) textPaint.setAlpha(180);
+
+            float tw = textPaint.measureText(item.name);
+            float pad = 4f * density;
+            float rl = sp.x - tw / 2 - pad;
+            float rt = sp.y - ts - pad * 2;
+            float rr = sp.x + tw / 2 + pad;
+            float rb = sp.y - pad * 0.5f;
+
+            Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            bgPaint.setColor(Color.argb(readOnly ? 160 : 210, 30, 30, 30));
+            bgPaint.setStyle(Paint.Style.FILL);
+
+            float cr = 4f * density;
+            c.drawRoundRect(rl, rt, rr, rb, cr, cr, bgPaint);
+            c.drawText(item.name, rl + pad, sp.y - pad * 1.5f, textPaint);
+        }
+
+        private GeoPoint computeCentroid() {
+            if (item.points.isEmpty()) return null;
+            double lat = 0, lng = 0;
+            for (GeoPoint pt : item.points) { lat += pt.getLatitude(); lng += pt.getLongitude(); }
+            return new GeoPoint(lat / item.points.size(), lng / item.points.size());
         }
     }
 

@@ -76,9 +76,10 @@ public class SurveyMapActivity extends AppCompatActivity {
             // 1. Build questionId → Question map from questionnaire
             Map<Integer, Question> questionMap = buildQuestionMap();
 
-            // 2. Load answers from Room DB
+            // 2. Load answers and GEOMETRY attachments from Room DB
             AppDatabase db = AppDatabase.getDatabase(this);
             List<Answer> answers = db.answerDao().getAnswersForSurvey(surveyId);
+            List<MediaAttachment> attachments = db.mediaAttachmentDao().getAttachmentsForSurvey(surveyId);
 
             // 3. Render on main thread
             List<GeoPoint> allPoints = new ArrayList<>();
@@ -102,6 +103,19 @@ public class SurveyMapActivity extends AppCompatActivity {
                             renderGeometry(answer.answerValue, label, color, allPoints);
                             break;
                     }
+                }
+
+                // Render geometry sketch attachments
+                for (MediaAttachment att : attachments) {
+                    if (!"GEOMETRY".equals(att.mediaType) || att.filePath == null) continue;
+                    try {
+                        String json = new String(java.nio.file.Files.readAllBytes(
+                                java.nio.file.Paths.get(att.filePath)));
+                        Question q = questionMap.get(att.questionId);
+                        String label = q != null ? q.getQuestionText() : "Sketch";
+                        int color = GeometryUtils.colorForQuestion(att.questionId);
+                        renderGeometry(json, label, color, allPoints);
+                    } catch (java.io.IOException ignored) {}
                 }
 
                 if (allPoints.isEmpty()) {
@@ -140,20 +154,21 @@ public class SurveyMapActivity extends AppCompatActivity {
         } catch (NumberFormatException ignored) {}
     }
 
-    private void renderGeometry(String value, String label, int color, List<GeoPoint> allPts) {
+    private void renderGeometry(String value, String groupLabel, int color, List<GeoPoint> allPts) {
         List<GeometryUtils.GeometryItem> items = GeometryUtils.fromJson(value);
         for (GeometryUtils.GeometryItem item : items) {
             allPts.addAll(item.points);
+            String itemLabel = item.name != null ? item.name : groupLabel;
             switch (item.type) {
                 case "POINT": {
                     if (item.points.isEmpty()) break;
                     Marker m = new Marker(mapView);
                     m.setPosition(item.points.get(0));
                     m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
-                    m.setTitle(label);
+                    m.setTitle(itemLabel);
                     m.setInfoWindow(null);
                     m.setOnMarkerClickListener((mk, mv) -> {
-                        Toast.makeText(this, label, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, itemLabel, Toast.LENGTH_SHORT).show();
                         return true;
                     });
                     mapView.getOverlays().add(m);
@@ -166,10 +181,11 @@ public class SurveyMapActivity extends AppCompatActivity {
                     pl.getOutlinePaint().setColor(color);
                     pl.getOutlinePaint().setStrokeWidth(6f);
                     pl.setOnClickListener((p, mv, e) -> {
-                        Toast.makeText(this, label, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, itemLabel, Toast.LENGTH_SHORT).show();
                         return true;
                     });
                     mapView.getOverlays().add(pl);
+                    if (item.name != null) addNameMarker(item, itemLabel, groupLabel);
                     break;
                 }
                 case "POLYGON": {
@@ -181,10 +197,11 @@ public class SurveyMapActivity extends AppCompatActivity {
                     pg.getOutlinePaint().setColor(color);
                     pg.getOutlinePaint().setStrokeWidth(5f);
                     pg.setOnClickListener((p, mv, e) -> {
-                        Toast.makeText(this, label, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, itemLabel, Toast.LENGTH_SHORT).show();
                         return true;
                     });
                     mapView.getOverlays().add(pg);
+                    if (item.name != null) addNameMarker(item, itemLabel, groupLabel);
                     break;
                 }
                 case "LABEL": {
@@ -193,7 +210,7 @@ public class SurveyMapActivity extends AppCompatActivity {
                     m.setPosition(item.points.get(0));
                     m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
                     m.setTitle(item.text);
-                    m.setSnippet(label);
+                    m.setSnippet(groupLabel);
                     m.setInfoWindow(null);
                     m.setOnMarkerClickListener((mk, mv) -> {
                         Toast.makeText(this, item.text, Toast.LENGTH_SHORT).show();
@@ -204,6 +221,25 @@ public class SurveyMapActivity extends AppCompatActivity {
                 }
             }
         }
+    }
+
+    private void addNameMarker(GeometryUtils.GeometryItem item, String name, String snippet) {
+        if (item.points.isEmpty()) return;
+        double lat = 0, lng = 0;
+        for (GeoPoint pt : item.points) { lat += pt.getLatitude(); lng += pt.getLongitude(); }
+        GeoPoint centroid = new GeoPoint(lat / item.points.size(), lng / item.points.size());
+        Marker m = new Marker(mapView);
+        m.setPosition(centroid);
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+        m.setTitle(name);
+        m.setSnippet(snippet);
+        m.setIcon(null);
+        m.setInfoWindow(null);
+        m.setOnMarkerClickListener((mk, mv) -> {
+            Toast.makeText(this, name + " (" + snippet + ")", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        mapView.getOverlays().add(m);
     }
 
     private Map<Integer, Question> buildQuestionMap() {

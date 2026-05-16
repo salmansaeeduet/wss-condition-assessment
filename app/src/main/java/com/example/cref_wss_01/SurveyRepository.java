@@ -77,6 +77,13 @@ import java.util.concurrent.Executors;public class SurveyRepository {
     }
 
 
+    public void updateMediaAttachment(MediaAttachment attachment, Runnable onComplete) {
+        executor.execute(() -> {
+            mediaAttachmentDao.update(attachment);
+            if (onComplete != null) onComplete.run();
+        });
+    }
+
     public void deleteMediaAttachment(MediaAttachment attachment) {
         executor.execute(() -> mediaAttachmentDao.delete(attachment));
     }

@@ -243,6 +243,9 @@ public class QuestionnaireParser {
 
         Question question = new Question(id, categoryName, subCatName, questionText,
                 answerType, answerOptions, explanation, parentId, triggerValue, tag);
+        if ("GEOMETRY".equals(answerType) && !answerOptions.isEmpty()) {
+            question.setGeomLabel(answerOptions.split("\\|")[0].trim());
+        }
         questionById.put(id, question);
 
         if (parentId > 0) {

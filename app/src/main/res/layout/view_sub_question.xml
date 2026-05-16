@@ -67,6 +67,14 @@
             android:src="@drawable/ic_add_audio"
             android:contentDescription="Add Audio" />
 
+        <ImageButton
+            android:id="@+id/sub_add_sketch_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            style="?android:attr/borderlessButtonStyle"
+            android:src="@drawable/ic_map"
+            android:contentDescription="Draw on Map" />
+
     </LinearLayout>
 
     <HorizontalScrollView
