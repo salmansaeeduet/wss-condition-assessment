@@ -6,6 +6,14 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-16 (latest)
 
+### Geometry picker: hide Edit when empty, remove Arrow checkbox
+**Files modified:** `GeometryPickerActivity.java`, `activity_geometry_picker.xml`
+
+- **Edit button** is now `GONE` in drawing mode when no shapes have been committed yet; it appears as soon as the first shape is saved. Previously it was always visible and showed a "no shapes to edit" toast when tapped empty.
+- **Arrow at end checkbox** removed from the layout and all Java references (`cbArrow` field, `findViewById`, `setVisibility` calls, `item.arrow = cbArrow.isChecked()`). New lines no longer set `arrow = true`; the arrowhead rendering in `GeometryOverlay` is retained for backward compatibility with any previously saved data.
+
+---
+
 ### Map geometry: shared context, default labels, UI cleanup, multi-point fix
 **Files modified:** `QuestionnaireParser.java`, `QuestionFragment.java`, `GeometryPickerActivity.java`, `SurveyMapActivity.java`, `SurveyRepository.java`, `activity_geometry_picker.xml`, `activity_survey_map.xml`
 

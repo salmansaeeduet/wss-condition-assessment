@@ -153,15 +153,6 @@
 
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
-            <!-- Arrow toggle — shown only when Line mode is active -->
-            <CheckBox
-                android:id="@+id/cbArrow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Arrow at end"
-                android:textSize="13sp"
-                android:visibility="gone" />
-
             <!-- Status line -->
             <TextView
                 android:id="@+id/tvStatus"

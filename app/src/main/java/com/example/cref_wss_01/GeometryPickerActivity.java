@@ -55,7 +55,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
     private TextView tvTitle, tvStatus;
     private Button btnUndo, btnAction, btnToggleEdit, btnDone;
     private MaterialButtonToggleGroup toggleGroupMode;
-    private CheckBox cbArrow;
 
     private PickerMode pickerMode = PickerMode.DRAWING;
     private String activeDrawType = "LINE";
@@ -97,7 +96,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
         btnToggleEdit = findViewById(R.id.btnToggleEdit);
         btnDone       = findViewById(R.id.btnDone);
         toggleGroupMode = findViewById(R.id.toggleGroupMode);
-        cbArrow       = findViewById(R.id.cbArrow);
 
         tvTitle.setText(label != null ? label : "Geometry");
 
@@ -226,7 +224,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
         activeDrawType = type;
         currentDraft.clear();
         redrawDraft();
-        cbArrow.setVisibility("LINE".equals(type) ? View.VISIBLE : View.GONE);
         updateUI();
     }
 
@@ -292,7 +289,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
         if (currentDraft.size() < minPts) return;
         GeometryUtils.GeometryItem item = new GeometryUtils.GeometryItem(
                 activeDrawType, new ArrayList<>(currentDraft));
-        if ("LINE".equals(activeDrawType)) item.arrow = cbArrow.isChecked();
         if (defaultLabel != null) {
             int n = completedItems.size() + 1;
             item.name = (n == 1) ? defaultLabel : defaultLabel + " " + n;
@@ -605,7 +601,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
         switch (pickerMode) {
             case DRAWING: {
                 toggleGroupMode.setVisibility(View.VISIBLE);
-                cbArrow.setVisibility("LINE".equals(activeDrawType) ? View.VISIBLE : View.GONE);
                 btnDone.setVisibility(View.VISIBLE);
 
                 boolean canUndo = !currentDraft.isEmpty();
@@ -620,14 +615,13 @@ public class GeometryPickerActivity extends AppCompatActivity {
                 btnAction.setVisibility(canAdd ? View.VISIBLE : View.GONE);
 
                 btnToggleEdit.setText("Edit");
-                btnToggleEdit.setEnabled(true);
+                btnToggleEdit.setVisibility(completedItems.isEmpty() ? View.GONE : View.VISIBLE);
 
                 tvStatus.setText(buildDrawingStatus());
                 break;
             }
             case SELECTING: {
                 toggleGroupMode.setVisibility(View.GONE);
-                cbArrow.setVisibility(View.GONE);
                 btnDone.setVisibility(View.VISIBLE);
 
                 btnUndo.setVisibility(View.GONE);
@@ -641,7 +635,6 @@ public class GeometryPickerActivity extends AppCompatActivity {
             }
             case EDITING: {
                 toggleGroupMode.setVisibility(View.GONE);
-                cbArrow.setVisibility(View.GONE);
                 btnDone.setVisibility(View.GONE);
 
                 int minPts = selectedIndex >= 0 ? minPointsFor(completedItems.get(selectedIndex).type) : 1;
