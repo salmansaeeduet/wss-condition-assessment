@@ -39,8 +39,10 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 
 public class GeometryPickerActivity extends AppCompatActivity {
@@ -62,6 +64,10 @@ public class GeometryPickerActivity extends AppCompatActivity {
     private final List<GeometryUtils.GeometryItem> completedItems  = new ArrayList<>();
     private final List<Overlay>                     completedOverlays = new ArrayList<>();
     private int selectedIndex = -1;
+
+    // Count of each geometry type present in other_geoms (all other survey sources),
+    // used to produce globally unique auto-labels across the whole survey.
+    private final Map<String, Integer> otherGeomTypeCounts = new HashMap<>();
 
     private final List<GeoPoint> currentDraft = new ArrayList<>();
     private Overlay draftPolylineOverlay;
@@ -169,6 +175,7 @@ public class GeometryPickerActivity extends AppCompatActivity {
                 int color = GeometryUtils.colorForQuestion(colorSeed);
                 List<GeometryUtils.GeometryItem> items = GeometryUtils.fromJson(geomJson);
                 for (GeometryUtils.GeometryItem item : items) {
+                    otherGeomTypeCounts.merge(item.type, 1, Integer::sum);
                     GeometryOverlay ov = new GeometryOverlay(item, color);
                     ov.readOnly = true;
                     mapView.getOverlays().add(0, ov);
@@ -289,16 +296,18 @@ public class GeometryPickerActivity extends AppCompatActivity {
         if (currentDraft.size() < minPts) return;
         GeometryUtils.GeometryItem item = new GeometryUtils.GeometryItem(
                 activeDrawType, new ArrayList<>(currentDraft));
+        int sameTypeInSession = 0;
+        for (GeometryUtils.GeometryItem it : completedItems) {
+            if (activeDrawType.equals(it.type)) sameTypeInSession++;
+        }
         if (defaultLabel != null) {
-            int n = completedItems.size() + 1;
-            item.name = (n == 1) ? defaultLabel : defaultLabel + " " + n;
+            // Custom label: number within this session only ("Pump 1", "Pump 2", …)
+            item.name = defaultLabel + " " + (sameTypeInSession + 1);
         } else {
-            String typePrefix = typeLabelPrefix(activeDrawType);
-            int sameTypeCount = 0;
-            for (GeometryUtils.GeometryItem it : completedItems) {
-                if (activeDrawType.equals(it.type)) sameTypeCount++;
-            }
-            item.name = typePrefix + " " + (sameTypeCount + 1);
+            // Auto label: number globally across all survey sources
+            int globalN = sameTypeInSession
+                    + otherGeomTypeCounts.getOrDefault(activeDrawType, 0) + 1;
+            item.name = typeLabelPrefix(activeDrawType) + " " + globalN;
         }
         addCompletedItem(item);
         currentDraft.clear();

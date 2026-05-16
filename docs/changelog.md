@@ -6,6 +6,24 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-16 (latest)
 
+### Geometry: canvas-drawn points in summary map, global auto-numbering, always-numbered labels
+**Files modified:** `GeometryPickerActivity.java`, `SurveyMapActivity.java`
+
+**Summary map point rendering:**
+- POINT items no longer render as osmdroid drop-pin Markers. The canvas overlay now draws colored filled circles with a white ring (matching the picker style exactly) for every POINT item.
+- POINT tap detection handled via `onSingleTapConfirmed` in the canvas overlay, checking proximity within 22dp of the point centre.
+- LINE/POLYGON still use osmdroid Polyline/Polygon for built-in hit testing.
+- `renderGeometry` and `addNameMarker` methods removed; replaced by `renderLine`, `renderPolygon`, `renderLegacyLabel`, and `buildCanvasOverlay`.
+
+**Global auto-numbering:**
+- `GeometryPickerActivity` now tracks a per-type count of items in `other_geoms` (`otherGeomTypeCounts`, populated in `loadOtherGeoms`). When auto-labelling a new item (no custom `defaultLabel`), the number is offset by the count from all other survey sources, so "Point 1/2" in one attachment no longer resets to "Point 1/2" in the next.
+- `SurveyMapActivity` renumbers all auto-generated names (`"Point/Line/Polygon N"`) globally across the full item list before rendering, fixing duplicate numbering in existing data.
+
+**Always-numbered custom labels:**
+- Items with a `defaultLabel` (e.g. "Pump") were previously named "Pump" for the first item and "Pump 2" onwards. Now they are always "Pump 1", "Pump 2", "Pump 3", etc.
+
+---
+
 ### Geometry picker: hide Edit when empty, remove Arrow checkbox
 **Files modified:** `GeometryPickerActivity.java`, `activity_geometry_picker.xml`
 
