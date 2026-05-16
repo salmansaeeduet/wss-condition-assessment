@@ -4,6 +4,38 @@ All notable changes to the Android app, newest first.
 
 ---
 
+## 2026-05-16 (latest)
+
+### Flexible REQ / PREFIX tag system for export validation and filename
+**Files modified:** `RequiredField.java`, `SurveyExporter.java`, `SurveyListActivity.java`, `ImportPreviewActivity.java`, `arrays.xml`, `strings.xml`, `Survey_Questionnaire_26050601.xlsx`
+
+Required fields and filename parts are now fully configured in the questionnaire XLSX Tag column (column J) — no code changes are needed when the questionnaire changes.
+
+**Tag syntax (pipe-separated parts in column J):**
+
+| Part | Effect |
+|---|---|
+| `REQ:Label` | Field must be answered before export; label shown in the missing-field dialog |
+| `PREFIX:n` | Answer used as the n-th segment of the ZIP filename (sorted by n) |
+| `REQ:Label\|PREFIX:n` | Both — required AND contributes to filename |
+| _(blank)_ | No special behaviour |
+
+Rules:
+- `n` must be a positive integer; non-integer values are silently ignored.
+- Empty PREFIX field values are skipped silently — only REQ fields block export.
+- If all PREFIX fields are empty or none are defined, filename falls back to `R.string.export_filename_prefix` + timestamp (default: `"WSS Survey_timestamp.zip"`).
+- `|` must not appear inside a REQ label; tag parsing is case-insensitive (`Prefix:1` and `PREFIX:1` both work).
+
+**Survey card title** is now driven by the PREFIX:1 field's answer (the primary filename identifier). Falls back to the first REQ field, then "Unnamed Survey".
+
+**`RequiredField.FilenamePrefix`** — new inner static class. `parseAll(List<Question>)` scans for `PREFIX:n` parts, returns a list sorted by n. `RequiredField.getDisplayValue(String raw, String answerType)` added as a static overload so PREFIX fields can apply COMPOUND-aware display extraction without a RequiredField instance.
+
+**`arrays.xml`** — `export_required_fields` string-array removed; file kept as a comment placeholder.
+
+**`strings.xml`** — added `export_filename_prefix` (`"WSS Survey"`) as the fallback filename prefix.
+
+---
+
 ## 2026-05-15 (latest)
 
 ### Show exported filename in success dialog and survey card

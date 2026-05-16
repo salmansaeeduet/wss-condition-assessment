@@ -1,18 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        Required fields for export — each entry is "TAG:Display Label".
-        TAG must match the value in the Tag column (column J) of the questionnaire XLSX.
-        Rules:
-          • ALL listed fields must be non-empty before export is allowed.
-          • Entry [0] → shown as the survey title in the survey list.
-          • Entries [0] and [1] → used as parts 1 and 2 of the ZIP filename.
-          • Entry [2+] → required for export but not included in the filename.
-        To adapt to a new questionnaire: set Tag values in the XLSX and update tags here.
-        No code changes are needed.
+        Required fields for export are now configured directly in the questionnaire XLSX:
+        set a question's Tag column (column J) to "REQ:Label" (e.g. "REQ:Scheme Name").
+        All REQ-tagged questions must be answered before export is allowed.
+        The first REQ field drives the survey card title; the first two drive the ZIP filename.
+        No entries are needed here anymore.
     -->
-    <string-array name="export_required_fields">
-        <item>SCHEME_NAME:Name of Scheme</item>
-        <item>INFO_PROVIDER:Information Provider Name</item>
-    </string-array>
 </resources>

@@ -31,18 +31,13 @@ public class SurveyExporter {
 
     /** Returns a content URI (API 29+) or file URI (API < 29) for the exported ZIP, or null on failure. */
     public static Uri export(Context context, SurveyWithAnswers surveyWithAnswers, List<Question> allQuestions) {
-        List<RequiredField> fields = RequiredField.parseAll(context, allQuestions);
-
-        String part1 = fields.size() > 0
-                ? fields.get(0).getDisplayValue(
-                        SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(0).id)) : "";
-        String part2 = fields.size() > 1
-                ? fields.get(1).getDisplayValue(
-                        SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, fields.get(1).id)) : "";
-
-        boolean part1Missing = fields.size() > 0 && (part1 == null || part1.isEmpty());
-        boolean part2Missing = fields.size() > 1 && (part2 == null || part2.isEmpty());
-        if (part1Missing || part2Missing) return null;
+        // Validate all REQ-tagged fields before proceeding
+        List<RequiredField> fields = RequiredField.parseAll(allQuestions);
+        for (RequiredField field : fields) {
+            String val = field.getDisplayValue(
+                    SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, field.id));
+            if (val.isEmpty()) return null;
+        }
 
         try {
             // Build CSV
@@ -89,11 +84,22 @@ public class SurveyExporter {
             writer.flush();
             writer.close();
 
-            // Build ZIP filename
+            // Build ZIP filename from PREFIX:n fields, sorted by n
             String timeStamp = new SimpleDateFormat("yyMMddHHmmss", Locale.US).format(new Date());
-            String safePart1 = part1.replaceAll("[^a-zA-Z0-9.-]", "_");
-            String safePart2 = part2.replaceAll("[^a-zA-Z0-9.-]", "_");
-            String baseName = (safePart2.isEmpty() ? safePart1 : safePart1 + "_" + safePart2) + "_" + timeStamp;
+            List<RequiredField.FilenamePrefix> prefixes =
+                    RequiredField.FilenamePrefix.parseAll(allQuestions);
+            StringBuilder nameBuilder = new StringBuilder();
+            for (RequiredField.FilenamePrefix pf : prefixes) {
+                String raw = SurveyListActivity.findAnswerValue(surveyWithAnswers.answers, pf.questionId);
+                String display = RequiredField.getDisplayValue(raw, pf.answerType);
+                if (display.isEmpty()) continue;
+                if (nameBuilder.length() > 0) nameBuilder.append("_");
+                nameBuilder.append(display.replaceAll("[^a-zA-Z0-9.-]", "_"));
+            }
+            if (nameBuilder.length() == 0) {
+                nameBuilder.append(context.getString(R.string.export_filename_prefix));
+            }
+            String baseName = nameBuilder + "_" + timeStamp;
 
             Uri result;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

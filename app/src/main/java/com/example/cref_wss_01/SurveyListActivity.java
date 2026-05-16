@@ -68,10 +68,23 @@ public class SurveyListActivity extends AppCompatActivity
             }
         }
 
-        requiredFields = RequiredField.parseAll(this, allQuestions);
+        requiredFields = RequiredField.parseAll(allQuestions);
+        List<RequiredField.FilenamePrefix> prefixFields =
+                RequiredField.FilenamePrefix.parseAll(allQuestions);
 
-        int titleQuestionId = requiredFields.isEmpty() ? 0 : requiredFields.get(0).id;
-        String titleAnswerType = requiredFields.isEmpty() ? "" : requiredFields.get(0).answerType;
+        // Card title: PREFIX:1 field, falling back to first REQ field
+        int titleQuestionId;
+        String titleAnswerType;
+        if (!prefixFields.isEmpty()) {
+            titleQuestionId = prefixFields.get(0).questionId;
+            titleAnswerType = prefixFields.get(0).answerType;
+        } else if (!requiredFields.isEmpty()) {
+            titleQuestionId = requiredFields.get(0).id;
+            titleAnswerType = requiredFields.get(0).answerType;
+        } else {
+            titleQuestionId = 0;
+            titleAnswerType = "";
+        }
 
         RecyclerView recyclerView = findViewById(R.id.survey_recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));

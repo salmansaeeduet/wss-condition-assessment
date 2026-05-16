@@ -1,6 +1,5 @@
 package com.example.cref_wss_01;
 
-import android.content.Context;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,32 +17,34 @@ public class RequiredField {
     }
 
     /**
-     * Parses R.array.export_required_fields entries of the form "TAG:Label" and resolves
-     * each tag to a question ID by searching the provided question list.
-     *
-     * Questions without a matching tag are silently omitted so that a misconfigured
-     * entry never crashes the export flow.
+     * Scans the question list for tags containing a "REQ:Label" part (pipe-delimited).
+     * Returns an empty list when no REQ tags are found — export is then unrestricted.
      */
-    public static List<RequiredField> parseAll(Context context, List<Question> questions) {
-        String[] entries = context.getResources().getStringArray(R.array.export_required_fields);
+    public static List<RequiredField> parseAll(List<Question> questions) {
         List<RequiredField> result = new ArrayList<>();
-        for (String entry : entries) {
-            int colon = entry.indexOf(':');
-            if (colon <= 0) continue;
-            String tag   = entry.substring(0, colon).trim();
-            String label = entry.substring(colon + 1).trim();
-            Question q = findByTag(questions, tag);
-            if (q != null) result.add(new RequiredField(q.getId(), label, tag, q.getAnswerType()));
+        for (Question q : questions) {
+            String tag = q.getTag();
+            if (tag == null) continue;
+            for (String part : tag.split("\\|")) {
+                part = part.trim();
+                if (part.toUpperCase().startsWith("REQ:")) {
+                    String label = part.substring(4).trim();
+                    if (label.isEmpty()) label = q.getQuestionText();
+                    result.add(new RequiredField(q.getId(), label, tag, q.getAnswerType()));
+                    break;
+                }
+            }
         }
         return result;
     }
 
-    /**
-     * Returns the human-readable value for this field from a raw DB answer string.
-     * For COMPOUND answers ("Label=value||Label=value...") returns the first field's value.
-     * For all other types returns the raw string unchanged.
-     */
+    /** Returns the display value for this field from a raw DB answer string. */
     public String getDisplayValue(String raw) {
+        return getDisplayValue(raw, answerType);
+    }
+
+    /** Static overload — usable without a RequiredField instance (e.g. for FilenamePrefix). */
+    public static String getDisplayValue(String raw, String answerType) {
         if (raw == null) return "";
         if ("COMPOUND".equals(answerType)) return extractFirstCompoundField(raw);
         return raw;
@@ -52,7 +53,6 @@ public class RequiredField {
     /**
      * Extracts the value of the first sub-field from a COMPOUND answer string.
      * Format: "Label=value||Label=value||..."
-     * Returns the raw string unchanged if it doesn't match the pattern.
      */
     public static String extractFirstCompoundField(String raw) {
         if (raw == null) return "";
@@ -62,10 +62,44 @@ public class RequiredField {
         return raw.substring(eq + 1, sep < 0 ? raw.length() : sep);
     }
 
-    private static Question findByTag(List<Question> questions, String tag) {
-        for (Question q : questions) {
-            if (tag.equalsIgnoreCase(q.getTag())) return q;
+    // -------------------------------------------------------------------------
+    // FilenamePrefix — questions tagged PREFIX:n contribute to the ZIP filename
+    // -------------------------------------------------------------------------
+
+    public static class FilenamePrefix {
+        public final int questionId;
+        public final int order;
+        public final String answerType;
+
+        private FilenamePrefix(int questionId, int order, String answerType) {
+            this.questionId = questionId;
+            this.order = order;
+            this.answerType = answerType != null ? answerType : "";
         }
-        return null;
+
+        /**
+         * Scans the question list for tags containing a "PREFIX:n" part (pipe-delimited).
+         * Returns an empty list when no PREFIX tags are found.
+         * Result is sorted ascending by n so callers can iterate in order.
+         */
+        public static List<FilenamePrefix> parseAll(List<Question> questions) {
+            List<FilenamePrefix> result = new ArrayList<>();
+            for (Question q : questions) {
+                String tag = q.getTag();
+                if (tag == null) continue;
+                for (String part : tag.split("\\|")) {
+                    part = part.trim();
+                    if (part.toUpperCase().startsWith("PREFIX:")) {
+                        try {
+                            int n = Integer.parseInt(part.substring(7).trim());
+                            result.add(new FilenamePrefix(q.getId(), n, q.getAnswerType()));
+                        } catch (NumberFormatException ignored) {}
+                        break;
+                    }
+                }
+            }
+            result.sort((a, b) -> a.order - b.order);
+            return result;
+        }
     }
 }

@@ -7,4 +7,5 @@
 
     <string name="questionnaire_file">Survey_Questionnaire_26050601.xlsx</string>
     <string name="questionnaire_sheet">Pumping Based 26051501</string>
+    <string name="export_filename_prefix">WSS Survey</string>
 </resources>

@@ -85,7 +85,7 @@ public class ImportPreviewActivity extends AppCompatActivity {
                 for (QuestionItem qi : sub.getQuestions())
                     allQuestions.add(qi.getQuestion());
 
-        requiredFields = RequiredField.parseAll(this, allQuestions);
+        requiredFields = RequiredField.parseAll(allQuestions);
 
         // Survey selection RecyclerView
         surveySelectAdapter = new SurveySelectAdapter(allSurveys, requiredFields, id -> {
