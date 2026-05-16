@@ -6,6 +6,30 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-16 (latest)
 
+### Hybrid geometry system: named GEOMETRY items + sketch attachments on all questions
+**Files modified:** `GeometryUtils.java`, `GeometryPickerActivity.java`, `Question.java`, `QuestionnaireParser.java`, `QuestionFragment.java`, `SurveyMapActivity.java`, `SurveyRepository.java`, `MediaAttachmentDao.java`, `SurveyImporter.java`, `fragment_question.xml`, `view_sub_question.xml`
+
+**Part 1 — Enhanced GEOMETRY answer type:**
+
+- `GeometryItem` now has a `name` field (JSON key `"n"`). Items drawn in a GEOMETRY question are auto-named from the question's AnswerOptions column: the first option becomes the default label ("Pump"). A single item is named "Pump"; subsequent items are "Pump 2", "Pump 3", etc. If no AnswerOptions are set, items remain unnamed.
+- **Rename dialog**: selecting an item in EDITING mode now shows a "Rename item" dialog (pre-filled with current name). Clearing the field removes the name.
+- **Name label rendered on map**: `GeometryOverlay` draws a dark rounded-rect chip with white text at the item centroid whenever `item.name` is set (both in picker and in read-only overlays).
+- `GeometryUtils.summary()` now lists named items by name ("Pump 1, Pump 2, 1 polygon saved") instead of counting them anonymously.
+- `QuestionnaireParser` reads the first pipe-split value in the AnswerOptions column as `geomLabel` for GEOMETRY questions.
+- **Survey map**: named LINE/POLYGON items get a centroid Marker in `SurveyMapActivity` — tapping shows the item name and parent question text.
+
+**Part 2 — Sketch attachment on every question:**
+
+- A "Draw on Map" button (`@drawable/ic_map`) appears in the attachment row of every question (and sub-question), regardless of answer type.
+- Tapping launches `GeometryPickerActivity` in unlabelled mode (no `default_label`). The result is written to `getFilesDir()/geom/<surveyId>_<qId>_<ts>.geom` and saved as a `MediaAttachment` with `mediaType = "GEOMETRY"`.
+- **Thumbnail**: GEOMETRY attachments appear as a map-icon tile with a summary line (e.g. "2 lines saved") at the bottom. Tapping reopens the picker to edit — on save the file is overwritten in-place and the DB record updated.
+- **Survey map**: `SurveyMapActivity` now also renders all GEOMETRY MediaAttachments from Room DB alongside GEOMETRY answer items.
+- **Export**: `.geom` files are already included via the existing `filePath` logic in `SurveyExporter`.
+- **Import**: `SurveyImporter.guessMediaType()` detects `.geom` → "GEOMETRY"; `buildMergeBundle()` copies `.geom` files to `getFilesDir()/geom/` (private) instead of `getExternalFilesDir(null)` (media).
+- `MediaAttachmentDao` gains an `@Update` method; `SurveyRepository` exposes `updateMediaAttachment()`.
+
+---
+
 ### Flexible REQ / PREFIX tag system for export validation and filename
 **Files modified:** `RequiredField.java`, `SurveyExporter.java`, `SurveyListActivity.java`, `ImportPreviewActivity.java`, `arrays.xml`, `strings.xml`, `Survey_Questionnaire_26050601.xlsx`
 
