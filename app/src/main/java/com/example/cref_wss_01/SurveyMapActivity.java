@@ -1,6 +1,8 @@
 package com.example.cref_wss_01;
 
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.os.Bundle;
 import android.widget.ImageButton;
 import android.widget.Toast;
@@ -14,6 +16,7 @@ import org.osmdroid.util.BoundingBox;
 import org.osmdroid.util.GeoPoint;
 import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.Marker;
+import org.osmdroid.views.overlay.Overlay;
 import org.osmdroid.views.overlay.Polygon;
 import org.osmdroid.views.overlay.Polyline;
 
@@ -31,6 +34,10 @@ public class SurveyMapActivity extends AppCompatActivity {
 
     private MapView mapView;
     private long surveyId;
+
+    // Collected during renderGeometry to drive the always-visible labels overlay
+    private final List<GeometryUtils.GeometryItem> labelItems  = new ArrayList<>();
+    private final List<Integer>                    labelColors = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -118,6 +125,43 @@ public class SurveyMapActivity extends AppCompatActivity {
                     } catch (java.io.IOException ignored) {}
                 }
 
+                // Add a single overlay that draws all geometry item name-labels on the canvas
+                mapView.getOverlays().add(new Overlay() {
+                    @Override
+                    public void draw(Canvas canvas, MapView mv, boolean shadow) {
+                        if (shadow) return;
+                        float density = mv.getContext().getResources().getDisplayMetrics().density;
+                        float ts  = 11f * density;
+                        float pad = 4f  * density;
+                        float cr  = 4f  * density;
+                        Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                        textPaint.setColor(Color.WHITE);
+                        textPaint.setTextSize(ts);
+                        textPaint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                        Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                        bgPaint.setStyle(Paint.Style.FILL);
+                        android.graphics.Point sp = new android.graphics.Point();
+                        for (int i = 0; i < labelItems.size(); i++) {
+                            GeometryUtils.GeometryItem item = labelItems.get(i);
+                            if (item.name == null || item.name.isEmpty()) continue;
+                            if (item.points.isEmpty()) continue;
+                            // Centroid for lines/polygons, the point itself for points
+                            double lat = 0, lng = 0;
+                            for (GeoPoint pt : item.points) { lat += pt.getLatitude(); lng += pt.getLongitude(); }
+                            GeoPoint centroid = new GeoPoint(lat / item.points.size(), lng / item.points.size());
+                            mv.getProjection().toPixels(centroid, sp);
+                            float tw = textPaint.measureText(item.name);
+                            float rl = sp.x - tw / 2 - pad;
+                            float rt = sp.y - ts - pad * 2;
+                            float rr = sp.x + tw / 2 + pad;
+                            float rb = sp.y - pad * 0.5f;
+                            bgPaint.setColor(Color.argb(210, 30, 30, 30));
+                            canvas.drawRoundRect(rl, rt, rr, rb, cr, cr, bgPaint);
+                            canvas.drawText(item.name, rl + pad, sp.y - pad * 1.5f, textPaint);
+                        }
+                    }
+                });
+
                 if (allPoints.isEmpty()) {
                     Toast.makeText(this, "No location or geometry answers in this survey yet.",
                             Toast.LENGTH_LONG).show();
@@ -158,6 +202,11 @@ public class SurveyMapActivity extends AppCompatActivity {
         List<GeometryUtils.GeometryItem> items = GeometryUtils.fromJson(value);
         for (GeometryUtils.GeometryItem item : items) {
             allPts.addAll(item.points);
+            // Collect for the always-visible labels overlay
+            if (item.name != null && !item.name.isEmpty()) {
+                labelItems.add(item);
+                labelColors.add(color);
+            }
             String itemLabel = item.name != null ? item.name : groupLabel;
             switch (item.type) {
                 case "POINT": {

@@ -1281,38 +1281,67 @@ public class QuestionFragment extends Fragment {
         mapPickerLauncher.launch(intent);
     }
 
+    /**
+     * Builds the other_geoms JSON for the map picker, combining geometry answers from all
+     * questions (except excludeQuestionId) and geometry attachments from all questions
+     * (except the attachment with excludeAttachmentId).
+     */
+    private org.json.JSONObject buildOtherGeomsJson(
+            List<Answer> answers, List<MediaAttachment> attachments,
+            int excludeQuestionId, long excludeAttachmentId) {
+        org.json.JSONObject json = new org.json.JSONObject();
+        for (Answer a : answers) {
+            if (a.questionId == excludeQuestionId) continue;
+            if (a.answerValue == null || a.answerValue.isEmpty()) continue;
+            String av = a.answerValue.trim();
+            if (!av.startsWith("[")) continue;
+            try {
+                new org.json.JSONArray(av);
+                json.put(String.valueOf(a.questionId), av);
+            } catch (org.json.JSONException ignored) {}
+        }
+        for (MediaAttachment att : attachments) {
+            if (!"GEOMETRY".equals(att.mediaType)) continue;
+            if (att.id == excludeAttachmentId) continue;
+            if (att.filePath == null) continue;
+            try {
+                String geomJson = new String(java.nio.file.Files.readAllBytes(
+                        java.nio.file.Paths.get(att.filePath))).trim();
+                if (!geomJson.startsWith("[")) continue;
+                new org.json.JSONArray(geomJson);
+                json.put("att_" + att.id, geomJson);
+            } catch (Exception ignored) {}
+        }
+        return json;
+    }
+
     private void launchSketchPicker(int questionId, MediaAttachment existingAttachment) {
         if (getContext() == null) return;
         sketchTargetQuestionId = questionId;
         sketchEditingAttachment = existingAttachment;
 
         repository.getAnswersForSurvey(surveyId, answers -> {
-            if (getActivity() == null || getContext() == null) return;
-            getActivity().runOnUiThread(() -> {
-                org.json.JSONObject otherGeomsJson = new org.json.JSONObject();
-                for (Answer a : answers) {
-                    if (a.answerValue == null || a.answerValue.isEmpty()) continue;
-                    String av = a.answerValue.trim();
-                    if (!av.startsWith("[")) continue;
-                    try {
-                        new org.json.JSONArray(av);
-                        otherGeomsJson.put(String.valueOf(a.questionId), av);
-                    } catch (org.json.JSONException ignored) {}
-                }
-                String existingJson = "";
-                if (existingAttachment != null && existingAttachment.filePath != null) {
-                    try {
-                        existingJson = new String(java.nio.file.Files.readAllBytes(
-                                java.nio.file.Paths.get(existingAttachment.filePath)));
-                    } catch (java.io.IOException ignored) {}
-                }
-                android.content.Intent intent = new android.content.Intent(
-                        getContext(), GeometryPickerActivity.class);
-                intent.putExtra("question_label", question.getQuestionText());
-                intent.putExtra("question_id", questionId);
-                if (!existingJson.isEmpty()) intent.putExtra("existing_value", existingJson);
-                intent.putExtra("other_geoms", otherGeomsJson.toString());
-                sketchPickerLauncher.launch(intent);
+            repository.getAttachmentsForSurvey(surveyId, attachments -> {
+                if (getActivity() == null || getContext() == null) return;
+                getActivity().runOnUiThread(() -> {
+                    org.json.JSONObject otherGeomsJson = buildOtherGeomsJson(
+                            answers, attachments, -1,
+                            existingAttachment != null ? existingAttachment.id : -1L);
+                    String existingJson = "";
+                    if (existingAttachment != null && existingAttachment.filePath != null) {
+                        try {
+                            existingJson = new String(java.nio.file.Files.readAllBytes(
+                                    java.nio.file.Paths.get(existingAttachment.filePath)));
+                        } catch (java.io.IOException ignored) {}
+                    }
+                    android.content.Intent intent = new android.content.Intent(
+                            getContext(), GeometryPickerActivity.class);
+                    intent.putExtra("question_label", question.getQuestionText());
+                    intent.putExtra("question_id", questionId);
+                    if (!existingJson.isEmpty()) intent.putExtra("existing_value", existingJson);
+                    intent.putExtra("other_geoms", otherGeomsJson.toString());
+                    sketchPickerLauncher.launch(intent);
+                });
             });
         });
     }
@@ -1337,39 +1366,31 @@ public class QuestionFragment extends Fragment {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         btnDraw.setOnClickListener(v -> {
-            // Gather other geometry answers to display as background in the picker
             repository.getAnswersForSurvey(surveyId, answers -> {
-                if (getActivity() == null || getContext() == null) return;
-                getActivity().runOnUiThread(() -> {
-                    org.json.JSONObject otherGeomsJson = new org.json.JSONObject();
-                    for (Answer a : answers) {
-                        if (a.questionId == questionId) continue;
-                        if (a.answerValue == null || a.answerValue.isEmpty()) continue;
-                        String av = a.answerValue.trim();
-                        if (!av.startsWith("[")) continue;
-                        try {
-                            new org.json.JSONArray(av); // validate
-                            otherGeomsJson.put(String.valueOf(a.questionId), av);
-                        } catch (org.json.JSONException ignored) {}
-                    }
+                repository.getAttachmentsForSurvey(surveyId, attachments -> {
+                    if (getActivity() == null || getContext() == null) return;
+                    getActivity().runOnUiThread(() -> {
+                        org.json.JSONObject otherGeomsJson = buildOtherGeomsJson(
+                                answers, attachments, questionId, -1L);
 
-                    pendingGeometryConsumer = newValue -> {
-                        saveAnswer(questionId, newValue);
-                        List<GeometryUtils.GeometryItem> updated = GeometryUtils.fromJson(newValue);
-                        tvStatus.setText(GeometryUtils.summary(updated));
-                        btnDraw.setText("Edit on Map");
-                    };
+                        pendingGeometryConsumer = newValue -> {
+                            saveAnswer(questionId, newValue);
+                            List<GeometryUtils.GeometryItem> updated = GeometryUtils.fromJson(newValue);
+                            tvStatus.setText(GeometryUtils.summary(updated));
+                            btnDraw.setText("Edit on Map");
+                        };
 
-                    android.content.Intent intent = new android.content.Intent(
-                            getContext(), GeometryPickerActivity.class);
-                    intent.putExtra("question_label", question.getQuestionText());
-                    intent.putExtra("question_id", questionId);
-                    if (question.getGeomLabel() != null)
-                        intent.putExtra("default_label", question.getGeomLabel());
-                    if (existing != null && !existing.isEmpty())
-                        intent.putExtra("existing_value", existing);
-                    intent.putExtra("other_geoms", otherGeomsJson.toString());
-                    geometryPickerLauncher.launch(intent);
+                        android.content.Intent intent = new android.content.Intent(
+                                getContext(), GeometryPickerActivity.class);
+                        intent.putExtra("question_label", question.getQuestionText());
+                        intent.putExtra("question_id", questionId);
+                        if (question.getGeomLabel() != null)
+                            intent.putExtra("default_label", question.getGeomLabel());
+                        if (existing != null && !existing.isEmpty())
+                            intent.putExtra("existing_value", existing);
+                        intent.putExtra("other_geoms", otherGeomsJson.toString());
+                        geometryPickerLauncher.launch(intent);
+                    });
                 });
             });
         });

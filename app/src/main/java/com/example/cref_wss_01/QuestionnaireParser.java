@@ -102,8 +102,9 @@ public class QuestionnaireParser {
         String target = xlsxRelTarget(entries.get("xl/_rels/workbook.xml.rels"), rId);
         if (target == null) throw new IOException("Relationship not found for rId: " + rId);
 
-        byte[] sheetData = entries.get("xl/" + target);
-        if (sheetData == null) throw new IOException("Sheet file not found: xl/" + target);
+        String sheetPath = target.startsWith("/") ? target.substring(1) : "xl/" + target;
+        byte[] sheetData = entries.get(sheetPath);
+        if (sheetData == null) throw new IOException("Sheet file not found: " + sheetPath);
 
         List<String> sst = new ArrayList<>();
         byte[] sstData = entries.get("xl/sharedStrings.xml");
@@ -169,6 +170,7 @@ public class QuestionnaireParser {
             Element rowEl = (Element) rowNodes.item(i);
             NodeList cells = rowEl.getElementsByTagName("c");
             Map<Integer, String> cols = new TreeMap<>();
+            boolean colAHasFormula = false;
             for (int j = 0; j < cells.getLength(); j++) {
                 Element c = (Element) cells.item(j);
                 int col = xlsxColIndex(c.getAttribute("r"));
@@ -184,10 +186,16 @@ public class QuestionnaireParser {
                 } else if (vNodes.getLength() > 0) {
                     val = vNodes.item(0).getTextContent().trim();
                 }
+                if (col == 0 && c.getElementsByTagName("f").getLength() > 0) colAHasFormula = true;
                 cols.put(col, val);
             }
             String idStr = cols.getOrDefault(0, "").trim();
-            if (idStr.isEmpty()) continue;
+            if (idStr.isEmpty()) {
+                // Formula with no cached value — derive ID from row position (row 1 is header)
+                if (!colAHasFormula) continue;
+                try { idStr = String.valueOf(Integer.parseInt(rowEl.getAttribute("r")) - 1); }
+                catch (NumberFormatException ignored) { continue; }
+            }
             try {
                 processRow(idStr,
                     cols.getOrDefault(1, "").trim(), cols.getOrDefault(2, "").trim(),

@@ -6,6 +6,36 @@ All notable changes to the Android app, newest first.
 
 ## 2026-05-16 (latest)
 
+### Map geometry: shared context, default labels, UI cleanup, multi-point fix
+**Files modified:** `QuestionnaireParser.java`, `QuestionFragment.java`, `GeometryPickerActivity.java`, `SurveyMapActivity.java`, `SurveyRepository.java`, `activity_geometry_picker.xml`, `activity_survey_map.xml`
+
+**Bug fixes:**
+
+- **XLSX sheet not found (absolute target path):** `QuestionnaireParser` built the ZIP entry key as `"xl/" + target`, but the relationship file stores absolute targets (`/xl/worksheets/sheet5.xml`). Combined key was `"xl//xl/…"` — never found, silently returned zero questions. Fixed: strip the leading `/` when target is absolute.
+- **Only first question loaded:** Row IDs from row 3 onwards use Excel increment formulas (`A2+1`) whose cached `<v>` elements are empty. Parser saw an empty ID string and skipped every row after row 2. Fixed: detect formula cells (`<f>` element present, empty `<v>`), derive ID from the row's `r` attribute minus 1 (row 1 = header).
+- **Multiple points — only first shown:** In POINT drawing mode, all taps accumulated into `currentDraft` before the user pressed Add, storing multiple coordinates in a single POINT `GeometryItem`. Rendering always used `points.get(0)`. Fixed: POINT mode now auto-commits on each tap so every tap creates its own named `GeometryItem` with exactly one coordinate.
+
+**Geometry map improvements:**
+
+- **Shared map context:** Both geometry answer pickers and sketch attachment pickers now show all geometry from the entire survey as read-only background overlays — covering both GEOMETRY answer items (keyed by question ID) and GEOMETRY media attachments (keyed by `att_<id>`). `SurveyRepository` exposes a new async `getAttachmentsForSurvey()`. `buildOtherGeomsJson()` helper in `QuestionFragment` consolidates both sources and correctly excludes the item currently being edited.
+- **Default geometry labels:** When no `default_label` is set (unnamed GEOMETRY questions or sketch attachments), `GeometryPickerActivity` now auto-labels each committed item by type with a per-type counter: "Point 1", "Point 2", "Line 1", "Polygon 1", etc.
+- **Always-visible labels in summary map:** `SurveyMapActivity` previously showed geometry item names only on tap (Toast). Now a canvas-draw `Overlay` renders every item's name as a dark rounded-rect chip at its centroid on every frame, matching the in-picker experience. Hint text updated to "Tap any feature for details".
+- **LABEL mode removed from picker UI:** The LABEL button is hidden (`visibility="gone"`). Named POINTs serve the same purpose. Existing saved LABEL items still render correctly.
+- **`loadOtherGeoms` key parsing:** Now accepts both integer question-ID keys and `"att_<id>"` string keys; falls back to `hashCode` for anything else, so future key formats won't silently drop overlays.
+
+**Layout tweaks (carried over from previous session):**
+
+- Attachment icon buttons in `fragment_question.xml` and `view_sub_question.xml` now use `layout_width="0dp"` + `layout_weight="1"` for even spacing across the row.
+- `ic_map.xml` gains `android:tint="?attr/colorControlNormal"` so the map icon matches the theme colour.
+
+**Geometry picker UI cleanup:**
+
+- `btnUndo` and `btnAction` (Add) are now `GONE` rather than disabled when their action is unavailable (no draft points / insufficient draft points). They reappear as soon as the action becomes possible.
+- In SELECTING mode both buttons are always `GONE`.
+- The green `btnDone` is hidden during EDITING mode — "Done Edit" already exits that mode; Done belongs to the drawing/selecting context.
+
+---
+
 ### Create parallel development fork — cref_wss_02
 **Action:** Copied `cref_wss_01` to `C:\Users\Salman\AndroidStudioProjects\cref_wss_02` to allow parallel development on a separate app variant. The fork starts from v1.2 (all features up to the hybrid geometry system). Changes in the fork:
 - `applicationId` → `com.wss.cref.assessment.v2` (allows both to install side-by-side on the same device)

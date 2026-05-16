@@ -157,11 +157,18 @@ public class GeometryPickerActivity extends AppCompatActivity {
             JSONObject map = new JSONObject(otherGeomsJson);
             Iterator<String> keys = map.keys();
             while (keys.hasNext()) {
-                String qIdStr = keys.next();
-                String geomJson = map.getString(qIdStr);
-                int qId;
-                try { qId = Integer.parseInt(qIdStr); } catch (NumberFormatException e) { continue; }
-                int color = GeometryUtils.colorForQuestion(qId);
+                String key = keys.next();
+                String geomJson = map.getString(key);
+                int colorSeed;
+                try {
+                    colorSeed = Integer.parseInt(key);
+                } catch (NumberFormatException e) {
+                    // "att_<id>" or other string key — use the numeric suffix if present
+                    int under = key.lastIndexOf('_');
+                    try { colorSeed = Integer.parseInt(under >= 0 ? key.substring(under + 1) : key); }
+                    catch (NumberFormatException e2) { colorSeed = key.hashCode(); }
+                }
+                int color = GeometryUtils.colorForQuestion(colorSeed);
                 List<GeometryUtils.GeometryItem> items = GeometryUtils.fromJson(geomJson);
                 for (GeometryUtils.GeometryItem item : items) {
                     GeometryOverlay ov = new GeometryOverlay(item, color);
@@ -274,6 +281,10 @@ public class GeometryPickerActivity extends AppCompatActivity {
         currentDraft.add(p);
         redrawDraft();
         updateUI();
+        // Points are single-coordinate: auto-commit on each tap so every tap = one named point
+        if ("POINT".equals(activeDrawType)) {
+            commitDraft();
+        }
     }
 
     private void commitDraft() {
@@ -285,11 +296,28 @@ public class GeometryPickerActivity extends AppCompatActivity {
         if (defaultLabel != null) {
             int n = completedItems.size() + 1;
             item.name = (n == 1) ? defaultLabel : defaultLabel + " " + n;
+        } else {
+            String typePrefix = typeLabelPrefix(activeDrawType);
+            int sameTypeCount = 0;
+            for (GeometryUtils.GeometryItem it : completedItems) {
+                if (activeDrawType.equals(it.type)) sameTypeCount++;
+            }
+            item.name = typePrefix + " " + (sameTypeCount + 1);
         }
         addCompletedItem(item);
         currentDraft.clear();
         redrawDraft();
         updateUI();
+    }
+
+    private static String typeLabelPrefix(String type) {
+        switch (type) {
+            case "POINT":   return "Point";
+            case "LINE":    return "Line";
+            case "POLYGON": return "Polygon";
+            case "LABEL":   return "Label";
+            default:        return type;
+        }
     }
 
     private int minPointsFor(String type) {
@@ -575,56 +603,64 @@ public class GeometryPickerActivity extends AppCompatActivity {
 
     private void updateUI() {
         switch (pickerMode) {
-            case DRAWING:
+            case DRAWING: {
                 toggleGroupMode.setVisibility(View.VISIBLE);
                 cbArrow.setVisibility("LINE".equals(activeDrawType) ? View.VISIBLE : View.GONE);
+                btnDone.setVisibility(View.VISIBLE);
 
+                boolean canUndo = !currentDraft.isEmpty();
                 btnUndo.setText("Undo");
-                btnUndo.setEnabled(!currentDraft.isEmpty());
+                btnUndo.setEnabled(canUndo);
+                btnUndo.setVisibility(canUndo ? View.VISIBLE : View.GONE);
 
+                boolean canAdd = currentDraft.size() >= minPointsFor(activeDrawType)
+                        && !"LABEL".equals(activeDrawType);
                 btnAction.setText("Add");
-                btnAction.setEnabled(currentDraft.size() >= minPointsFor(activeDrawType)
-                        && !"LABEL".equals(activeDrawType));
+                btnAction.setEnabled(canAdd);
+                btnAction.setVisibility(canAdd ? View.VISIBLE : View.GONE);
 
                 btnToggleEdit.setText("Edit");
                 btnToggleEdit.setEnabled(true);
 
                 tvStatus.setText(buildDrawingStatus());
                 break;
-
-            case SELECTING:
+            }
+            case SELECTING: {
                 toggleGroupMode.setVisibility(View.GONE);
                 cbArrow.setVisibility(View.GONE);
+                btnDone.setVisibility(View.VISIBLE);
 
-                btnUndo.setText("Undo");
-                btnUndo.setEnabled(false);
-
-                btnAction.setText("Add");
-                btnAction.setEnabled(false);
+                btnUndo.setVisibility(View.GONE);
+                btnAction.setVisibility(View.GONE);
 
                 btnToggleEdit.setText("Cancel");
                 btnToggleEdit.setEnabled(true);
 
                 tvStatus.setText("Tap a shape to select it");
                 break;
-
-            case EDITING:
+            }
+            case EDITING: {
                 toggleGroupMode.setVisibility(View.GONE);
                 cbArrow.setVisibility(View.GONE);
+                btnDone.setVisibility(View.GONE);
 
                 int minPts = selectedIndex >= 0 ? minPointsFor(completedItems.get(selectedIndex).type) : 1;
                 int curPts = selectedIndex >= 0 ? completedItems.get(selectedIndex).points.size() : 0;
+                boolean canUndoPt = curPts > minPts;
                 btnUndo.setText("Undo Pt");
-                btnUndo.setEnabled(curPts > minPts);
+                btnUndo.setEnabled(canUndoPt);
+                btnUndo.setVisibility(canUndoPt ? View.VISIBLE : View.GONE);
 
                 btnAction.setText("Delete");
                 btnAction.setEnabled(true);
+                btnAction.setVisibility(View.VISIBLE);
 
                 btnToggleEdit.setText("Done Edit");
                 btnToggleEdit.setEnabled(true);
 
                 tvStatus.setText("Drag handles to reposition • Tap midpoint to add • Tap Delete to remove");
                 break;
+            }
         }
     }
 

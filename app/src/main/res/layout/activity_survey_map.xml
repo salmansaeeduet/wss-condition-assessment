@@ -62,6 +62,6 @@
         android:background="#AA000000"
         android:textColor="#FFFFFF"
         android:textSize="12sp"
-        android:text="Tap any marker, line, or polygon to see its label" />
+        android:text="Tap any feature for details" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

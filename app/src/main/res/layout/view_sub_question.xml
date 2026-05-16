@@ -37,40 +37,50 @@
 
         <ImageButton
             android:id="@+id/sub_attach_file_button"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
             style="?android:attr/borderlessButtonStyle"
             android:src="@drawable/ic_attach_file"
             android:contentDescription="Attach File" />
 
         <ImageButton
             android:id="@+id/sub_add_photo_button"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
             style="?android:attr/borderlessButtonStyle"
             android:src="@drawable/ic_add_a_photo"
             android:contentDescription="Add Photo" />
 
         <ImageButton
             android:id="@+id/sub_add_video_button"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
             style="?android:attr/borderlessButtonStyle"
             android:src="@drawable/ic_add_video"
             android:contentDescription="Add Video" />
 
         <ImageButton
             android:id="@+id/sub_add_audio_button"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
             style="?android:attr/borderlessButtonStyle"
             android:src="@drawable/ic_add_audio"
             android:contentDescription="Add Audio" />
 
         <ImageButton
             android:id="@+id/sub_add_sketch_button"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="0dp"
             style="?android:attr/borderlessButtonStyle"
             android:src="@drawable/ic_map"
             android:contentDescription="Draw on Map" />

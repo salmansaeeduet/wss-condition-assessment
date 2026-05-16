@@ -96,6 +96,10 @@ import java.util.concurrent.Executors;public class SurveyRepository {
         executor.execute(() -> callback.accept(mediaAttachmentDao.getAttachmentsForQuestion(surveyId, questionId)));
     }
 
+    public void getAttachmentsForSurvey(long surveyId, java.util.function.Consumer<List<MediaAttachment>> callback) {
+        executor.execute(() -> callback.accept(mediaAttachmentDao.getAttachmentsForSurvey(surveyId)));
+    }
+
     public void getSurveyWithAnswersAndAttachments(long surveyId, java.util.function.Consumer<SurveyWithAnswers> callback) {
         executor.execute(() -> callback.accept(surveyDao.getSurveyWithAnswersAndAttachments(surveyId)));
     }
